@@ -105,7 +105,7 @@ export default function HeadshotStudio() {
 
   const clearRequests = () => setRequests([]);
 
-  const sendToGenerate = () => {
+  const requestGeneration = () => {
     if (requests.length === 0) {
       toast.error("Add some variations first");
       return;
@@ -115,17 +115,13 @@ export default function HeadshotStudio() {
       return;
     }
 
-    let msg = `Using all the attached source photos as references to create a good, consistent rendition of the subject, generate these professional headshot variations:\n\n`;
-    requests.forEach((r, i) => {
-      msg += `${i + 1}. ${r.categoryName} with ${r.backgroundLabel} background\n`;
-    });
-    msg += `\nChange only the clothing, expression/pose, and background/setting according to the professional style. Keep the person's exact face, hair, and identity consistent across every photo. High-resolution, studio quality.`;
-
-    navigator.clipboard.writeText(msg).then(() => {
-      toast.success("Request copied! Paste it here with your source photos attached. I'll generate the real photos using a composite of all your uploads for the best consistent subject.");
-    }).catch(() => {
-      prompt("Copy and send this with your photos attached:", msg);
-    });
+    // The app has prepared the exact variations you want.
+    // Tell me in this chat (with your source photos attached) something like:
+    // "generate all requested" or list the ones you want.
+    // I will generate the real photos using all your uploads as references
+    // for the best consistent subject.
+    // Then drop the results into the "Your photos" section below to organize and download from the site.
+    toast.success(`${requests.length} variations requested. In this chat, say "generate all requested" (with your photos attached) and I'll create the real photos. Drop the results here to download everything from the site.`);
   };
 
   const addGenerated = (file: File, label: string) => {
@@ -253,10 +249,10 @@ export default function HeadshotStudio() {
 
           {requests.length > 0 && (
             <div className="mt-6">
-              <button onClick={sendToGenerate} className="px-8 py-3 rounded-2xl bg-white text-black font-semibold">
-                Generate These Photos
+              <button onClick={requestGeneration} className="px-8 py-3 rounded-2xl bg-white text-black font-semibold">
+                Request Generation for These Variations
               </button>
-              <div className="text-xs text-zinc-400 mt-2">This prepares the request using all your uploaded photos for the best consistent subject. Paste the copied message here with your photos attached — I'll generate the real JPGs.</div>
+              <div className="text-xs text-zinc-400 mt-2">The app has your requested variations ready. In this chat (with your photos attached), just say "generate all requested" — I'll create the real photos using all your uploads as references for the best consistent subject. Then drop the results here to organize and download from the site.</div>
               <button onClick={clearRequests} className="ml-3 text-sm text-zinc-400 hover:text-zinc-200">Clear list</button>
             </div>
           )}
@@ -303,7 +299,7 @@ export default function HeadshotStudio() {
         </section>
 
         <div className="text-center text-xs text-zinc-500 mt-16">
-          Upload photos → consistent subject from all of them → request variations (clothes &amp; settings) → I generate the real photos → you organize &amp; download from this site.
+          Upload photos of the subject → the app builds a consistent rendition from all of them → request variations by changing clothes and backgrounds per the 6 professional styles → tell me to generate → drop the photos here and download everything from the site.
         </div>
       </div>
     </div>

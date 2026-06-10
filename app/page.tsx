@@ -24,12 +24,10 @@ type Background = {
 };
 
 const CATEGORIES: Category[] = [
-  { id: 'corporate', name: 'Corporate Executive', description: 'LinkedIn, executive bios, formal presentations' },
-  { id: 'creative', name: 'Creative Professional', description: 'Design agencies, creative portfolios' },
-  { id: 'tech', name: 'Tech Entrepreneur', description: 'Startup founders, modern tech profiles' },
-  { id: 'healthcare', name: 'Healthcare Professional', description: 'Medical practices, doctor profiles' },
-  { id: 'academic', name: 'Academic / Consultant', description: 'University, consulting, thought leadership' },
-  { id: 'sales', name: 'Sales / Client-Facing', description: 'Sales teams, approachable business profiles' },
+  { id: 'venture-capitalist', name: 'Venture Capitalist / Urban Strategist', description: 'LinkedIn, VC pitches, executive networks - charcoal wool suit, analytical prestige' },
+  { id: 'thought-leader', name: 'Thought Leader / Non-Profit Director', description: 'Academic, consulting, foundations - camel blazer + rollneck, warm compassionate authority' },
+  { id: 'digital-architect', name: 'Digital Architect / Tech Lead', description: 'Startup tech leads, engineering - technical knit polo, modern innovative energy' },
+  { id: 'arts-administrator', name: 'Arts Administrator / Cultural Consultant', description: 'Creative directors, cultural leaders - minimalist black blazer + silk, sophisticated gallery style' },
 ];
 
 const BACKGROUNDS: Background[] = [
@@ -39,28 +37,19 @@ const BACKGROUNDS: Background[] = [
   { id: 'cool-bluegray', label: 'Cool Blue-Gray Modern', description: 'Calm, contemporary, tech-forward' },
 ];
 
-type VariationRequest = {
-  id: string;
-  categoryId: string;
-  categoryName: string;
-  backgroundId: string;
-  backgroundLabel: string;
-};
-
-type MyPhoto = {
-  id: string;
+type GeneratedResult = {
+  imageUrl: string;
   label: string;
-  previewUrl: string;
-  file: File;
+  categoryName: string;
+  backgroundLabel: string;
 };
 
 export default function HeadshotStudio() {
   const [sources, setSources] = useState<SourcePhoto[]>([]);
-  const [subjectReady, setSubjectReady] = useState(false);
-  const [requests, setRequests] = useState<VariationRequest[]>([]);
-  const [myPhotos, setMyPhotos] = useState<MyPhoto[]>([]);
-
   const [referenceUrls, setReferenceUrls] = useState<string[]>([]);
+  const [subjectReady, setSubjectReady] = useState(false);
+  const [generatedResults, setGeneratedResults] = useState<GeneratedResult[]>([]);
+  const [isGenerating, setIsGenerating] = useState(false);
 
   const handleFiles = async (files: FileList | null) => {
     if (!files) return;
@@ -71,13 +60,9 @@ export default function HeadshotStudio() {
       const file = files[i];
       if (!file.type.startsWith('image/')) continue;
 
-      // Upload to Vercel Blob for permanent reference URLs
       const formData = new FormData();
       formData.append('file', file);
-      const uploadRes = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData,
-      });
+      const uploadRes = await fetch('/api/upload', { method: 'POST', body: formData });
       const { url } = await uploadRes.json();
 
       const id = `src-${Date.now()}-${i}`;
@@ -88,7 +73,7 @@ export default function HeadshotStudio() {
     setSources(prev => [...prev, ...newOnes]);
     setReferenceUrls(prev => [...prev, ...newBlobUrls]);
     setSubjectReady(false);
-    toast.success(`Added ${newOnes.length} photo(s) — ready for consistent subject`);
+    toast.success(`Added ${newOnes.length} photo(s)`);
   };
 
   const removeSource = (id: string) => {
@@ -102,30 +87,26 @@ export default function HeadshotStudio() {
 
   const buildSubject = () => {
     if (sources.length === 0) {
-      toast.error("Upload some photos of the subject first");
+      toast.error("Upload some photos first");
       return;
     }
     setSubjectReady(true);
-    toast.success(`Consistent rendition of the subject created from ${sources.length} photos`);
+    toast.success(`Consistent subject created from ${sources.length} photos (all will be used as references for face consistency)`);
   };
-
-  const [generatedResults, setGeneratedResults] = useState<any[]>([]);
-  const [isGenerating, setIsGenerating] = useState(false);
 
   const generateVariation = async (cat: Category, bg: Background) => {
     if (referenceUrls.length === 0) {
-      toast.error("Upload photos first");
+      toast.error("Upload and build subject from your photos first");
       return;
     }
 
     setIsGenerating(true);
-
     try {
       const res = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          references: referenceUrls,
+          references: referenceUrls, // all photos for composite / consistent subject
           categoryId: cat.id,
           backgroundId: bg.id,
           label: `${cat.name} - ${bg.label}`,
@@ -133,86 +114,33 @@ export default function HeadshotStudio() {
       });
 
       const data = await res.json();
-
       if (data.error) throw new Error(data.error);
 
       setGeneratedResults(prev => [...prev, {
-        ...data,
+        imageUrl: data.imageUrl,
+        label: data.label || `${cat.name} - ${bg.label}`,
         categoryName: cat.name,
         backgroundLabel: bg.label,
       }]);
 
       toast.success(`Generated: ${cat.name} - ${bg.label}`);
     } catch (err: any) {
-      toast.error(err.message || 'Generation failed');
+      toast.error(err.message || 'Generation failed. Make sure REPLICATE_API_TOKEN is set in Vercel.');
     } finally {
       setIsGenerating(false);
     }
   };
 
-  const clearRequests = () => setRequests([]);
-
-  const requestGeneration = () => {
-    if (requests.length === 0) {
-      toast.error("Add some variations first");
-      return;
-    }
-    if (sources.length === 0) {
-      toast.error("Upload your source photos first");
-      return;
-    }
-
-    // The app has prepared the exact variations you want.
-    // Tell me in this chat (with your source photos attached) something like:
-    // "generate all requested" or list the ones you want.
-    // I will generate the real photos using all your uploads as references
-    // for the best consistent subject.
-    // Then drop the results into the "Your photos" section below to organize and download from the site.
-    toast.success(`${requests.length} variations requested. In this chat, say "generate all requested" (with your photos attached) and I'll create the real photos. Drop the results here to download everything from the site.`);
-  };
-
-  const addGenerated = (file: File, label: string) => {
-    const id = `gen-${Date.now()}`;
-    const url = URL.createObjectURL(file);
-    setMyPhotos(prev => [...prev, { id, label, previewUrl: url, file }]);
-    toast.success("Added to your downloads");
-  };
-
-  const handleDropGenerated = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    const f = e.dataTransfer.files[0];
-    if (f) {
-      const label = prompt("Label for this photo? (e.g. Corporate - Dark)") || "Generated";
-      addGenerated(f, label);
-    }
-  };
-
-  const handleFileGenerated = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (f) {
-      const label = prompt("Label for this photo? (e.g. Corporate - Dark)") || "Generated";
-      addGenerated(f, label);
-    }
-    e.target.value = '';
-  };
-
-  const removeMyPhoto = (id: string) => {
-    setMyPhotos(prev => {
-      const p = prev.find(x => x.id === id);
-      if (p) URL.revokeObjectURL(p.previewUrl);
-      return prev.filter(x => x.id !== id);
-    });
-  };
-
   const downloadAll = async () => {
-    if (myPhotos.length === 0) {
-      toast.error("Add some photos first (generate them here in chat, then drop the files here)");
+    if (generatedResults.length === 0) {
+      toast.error("Generate some photos first");
       return;
     }
     const zip = new JSZip();
-    for (const p of myPhotos) {
-      const buf = await p.file.arrayBuffer();
-      zip.file(`${p.label.replace(/[^a-z0-9]/gi, '_')}.jpg`, buf);
+    for (const r of generatedResults) {
+      const res = await fetch(r.imageUrl);
+      const buf = await res.arrayBuffer();
+      zip.file(`${r.label.replace(/\s+/g, '-')}.jpg`, buf);
     }
     const blob = await zip.generateAsync({ type: "blob" });
     const url = URL.createObjectURL(blob);
@@ -224,33 +152,38 @@ export default function HeadshotStudio() {
   };
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-200">
-      <div className="max-w-5xl mx-auto p-6">
-        <header className="mb-10">
+    <div className="min-h-screen bg-zinc-950 text-zinc-200 p-6">
+      <div className="max-w-6xl mx-auto">
+        <header className="mb-8">
           <h1 className="text-4xl font-semibold tracking-tight">Headshot Studio</h1>
-          <p className="text-zinc-400 mt-1">Upload photos of the subject. The app creates a consistent rendition from all of them. Then generate professional variations by changing clothes and settings. Download the photos from here.</p>
+          <p className="text-zinc-400 mt-1">
+            Upload photos of the subject. The app creates a consistent rendition from all of them. 
+            Generate professional variations by changing clothes and backgrounds. Download real photos directly from the site.
+          </p>
         </header>
 
         {/* 1. Upload */}
-        <section className="mb-12">
+        <section className="mb-10">
           <div className="mb-3 flex items-center justify-between">
             <div>
               <div className="text-lg font-medium">1. Upload photos of the subject</div>
-              <div className="text-sm text-zinc-400">Multiple photos help the app create a good, consistent rendition of the person.</div>
+              <div className="text-sm text-zinc-400">Multiple photos (different angles/lighting) help create a better consistent rendition.</div>
             </div>
-            <label className="cursor-pointer flex items-center gap-2 px-5 py-2 bg-white text-black rounded-2xl text-sm font-medium active:bg-zinc-200">
+            <label className="cursor-pointer flex items-center gap-2 px-5 py-2 bg-white text-black rounded-2xl text-sm font-medium hover:bg-zinc-200 active:bg-white">
               <Upload className="w-4 h-4" /> Add Photos
-              <input type="file" multiple accept="image/*" className="hidden" onChange={e => handleFiles(e.target.files)} />
+              <input type="file" multiple accept="image/*" className="hidden" onChange={(e) => handleFiles(e.target.files)} />
             </label>
           </div>
 
           {sources.length > 0 && (
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-6 gap-3 mb-4">
               {sources.map(s => (
-                <div key={s.id} className="relative rounded-2xl overflow-hidden border border-zinc-800">
-                  <img src={s.previewUrl} className="aspect-square object-cover w-full" alt="" />
-                  <div className="text-[10px] p-2 bg-zinc-950/80 truncate">{s.name}</div>
-                  <button onClick={() => removeSource(s.id)} className="absolute top-2 right-2 bg-black/60 p-1 rounded-full"><X className="w-3 h-3" /></button>
+                <div key={s.id} className="relative group rounded-2xl overflow-hidden border border-zinc-800 bg-zinc-900">
+                  <img src={s.previewUrl} className="w-full aspect-square object-cover" alt={s.name} />
+                  <div className="p-2 text-[10px] truncate bg-black/60">{s.name}</div>
+                  <button onClick={() => removeSource(s.id)} className="absolute top-2 right-2 bg-black/70 p-1 rounded-full opacity-0 group-hover:opacity-100">
+                    <X className="w-3 h-3" />
+                  </button>
                 </div>
               ))}
             </div>
@@ -259,18 +192,22 @@ export default function HeadshotStudio() {
           <button
             onClick={buildSubject}
             disabled={sources.length === 0}
-            className="mt-4 px-6 py-2.5 bg-emerald-500 hover:bg-emerald-600 disabled:bg-zinc-700 rounded-2xl text-sm font-medium"
+            className="px-6 py-2.5 bg-emerald-500 hover:bg-emerald-600 disabled:bg-zinc-700 rounded-2xl text-sm font-medium"
           >
             Create consistent rendition of the subject from these photos
           </button>
-          {subjectReady && <div className="mt-2 text-emerald-400 text-sm">✓ Consistent subject ready from {sources.length} photos.</div>}
+          {subjectReady && (
+            <div className="mt-2 text-emerald-400 text-sm">
+              ✓ Consistent subject ready. All uploaded photos will be used as references for face consistency.
+            </div>
+          )}
         </section>
 
-        {/* 2. Variations */}
-        <section className="mb-12">
+        {/* 2. Generate variations */}
+        <section className="mb-10">
           <div className="mb-4">
-            <div className="text-lg font-medium">2. Request variations (different clothes &amp; settings)</div>
-            <div className="text-sm text-zinc-400">The app changes clothing and background/scene based on the professional style.</div>
+            <div className="text-lg font-medium">2. Generate variations (different clothes &amp; backgrounds)</div>
+            <div className="text-sm text-zinc-400">Click any button to generate a real photo. The app uses your uploaded photos as references + the professional style prompt.</div>
           </div>
 
           <div className="grid md:grid-cols-2 gap-4">
@@ -283,10 +220,10 @@ export default function HeadshotStudio() {
                     <button
                       key={bg.id}
                       onClick={() => generateVariation(cat, bg)}
-                      disabled={isGenerating || referenceUrls.length === 0}
-                      className="text-left text-sm border border-zinc-700 hover:border-zinc-500 rounded-xl px-3 py-2 disabled:opacity-50"
+                      disabled={isGenerating || !subjectReady}
+                      className="text-left text-sm border border-zinc-700 hover:border-zinc-500 rounded-xl px-3 py-2 disabled:opacity-50 hover:bg-zinc-800"
                     >
-                      <div className="font-medium text-sm">Generate {bg.label}</div>
+                      <div className="font-medium">Generate {bg.label}</div>
                       <div className="text-[10px] text-zinc-400">{bg.description}</div>
                     </button>
                   ))}
@@ -295,24 +232,18 @@ export default function HeadshotStudio() {
             ))}
           </div>
 
-          {requests.length > 0 && (
-            <div className="mt-6">
-              <button onClick={requestGeneration} className="px-8 py-3 rounded-2xl bg-white text-black font-semibold">
-                Request Generation for These Variations
-              </button>
-              <div className="text-xs text-zinc-400 mt-2">The app has your requested variations ready. In this chat (with your photos attached), just say "generate all requested" — I'll create the real photos using all your uploads as references for the best consistent subject. Then drop the results here to organize and download from the site.</div>
-              <button onClick={clearRequests} className="ml-3 text-sm text-zinc-400 hover:text-zinc-200">Clear list</button>
-            </div>
+          {isGenerating && (
+            <div className="mt-4 text-sm text-blue-400">Generating photo... (this can take 10-30s depending on the model)</div>
           )}
         </section>
 
-        {/* Live Generated Photos */}
+        {/* 3. Results - download from here */}
         {generatedResults.length > 0 && (
-          <section className="mb-12">
+          <section className="mb-10">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <div className="text-lg font-medium">Generated Photos</div>
-                <div className="text-sm text-zinc-400">Real photos generated by the app using your uploaded images as references.</div>
+                <div className="text-lg font-medium">3. Your generated photos (download from the site)</div>
+                <div className="text-sm text-zinc-400">Real photos generated by the app. Add more by clicking the buttons above.</div>
               </div>
               <button
                 onClick={async () => {
@@ -343,13 +274,7 @@ export default function HeadshotStudio() {
                   <img src={r.imageUrl} className="w-full aspect-square object-cover" alt={r.label} />
                   <div className="p-3 text-sm">
                     <div className="font-medium">{r.label}</div>
-                    <a
-                      href={r.imageUrl}
-                      download={`${r.label}.jpg`}
-                      className="text-xs text-blue-400 hover:underline"
-                    >
-                      Download JPG
-                    </a>
+                    <a href={r.imageUrl} download={`${r.label}.jpg`} className="text-xs text-blue-400 hover:underline">Download JPG</a>
                   </div>
                 </div>
               ))}
@@ -357,104 +282,10 @@ export default function HeadshotStudio() {
           </section>
         )}
 
-        {/* 3. My Photos (download hub) - for manually adding if needed */}
-        <section>
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <div className="text-lg font-medium">3. Your photos (download from here)</div>
-              <div className="text-sm text-zinc-400">After I generate the images, save them and drop them here. The site becomes your organized place to download everything.</div>
-            </div>
-            <div className="flex gap-2">
-              <label className="cursor-pointer px-4 py-2 border border-zinc-700 rounded-2xl text-sm flex items-center gap-2 hover:bg-zinc-900">
-                <Upload className="w-4 h-4" /> Add Generated Photo
-                <input type="file" accept="image/*" className="hidden" onChange={handleFileGenerated} />
-              </label>
-              <button onClick={downloadAllMyPhotos} className="px-4 py-2 bg-white text-black rounded-2xl text-sm font-medium">Download All as ZIP</button>
-            </div>
-          </div>
-
-          <div
-            onDragOver={e => e.preventDefault()}
-            onDrop={handleDropGenerated}
-            className="min-h-[140px] border border-dashed border-zinc-700 rounded-2xl p-4"
-          >
-            {myPhotos.length === 0 ? (
-              <div className="h-full flex items-center justify-center text-sm text-zinc-400">
-                Drop generated photos here or use the button above
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {myPhotos.map(p => (
-                  <div key={p.id} className="relative group rounded-2xl overflow-hidden border border-zinc-800">
-                    <img src={p.previewUrl} className="w-full aspect-square object-cover" alt="" />
-                    <div className="p-2 text-xs bg-black/70 truncate">{p.label}</div>
-                    <a href={p.previewUrl} download={`${p.label}.jpg`} className="absolute bottom-2 right-2 text-[10px] bg-white text-black px-2 py-0.5 rounded">Download</a>
-                    <button onClick={() => removeMyPhoto(p.id)} className="absolute top-2 right-2 bg-black/60 p-1 rounded-full opacity-0 group-hover:opacity-100"><X className="w-3 h-3" /></button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </section>
-
-        <div className="text-center text-xs text-zinc-500 mt-16">
-          Upload photos of the subject → the app builds a consistent rendition from all of them → request variations by changing clothes and backgrounds per the 6 professional styles → tell me to generate → drop the photos here and download everything from the site.
+        <div className="text-center text-xs text-zinc-500 mt-12">
+          Upload photos → consistent subject from all of them (used as references) → click to generate variations (clothes + backgrounds per the 6 styles) → download real photos from this site.
         </div>
       </div>
     </div>
   );
-
-  function addRequest(cat: Category, bg: Background) {
-    const id = `${cat.id}-${bg.id}-${Date.now()}`;
-    setRequests(prev => [...prev, {
-      id,
-      categoryId: cat.id,
-      categoryName: cat.name,
-      backgroundId: bg.id,
-      backgroundLabel: bg.label,
-    }]);
-  }
-
-  function handleFileGenerated(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0];
-    if (f) {
-      const label = prompt("Label for this photo (e.g. Corporate - Dark)?") || "Generated";
-      addGenerated(f, label);
-    }
-    e.target.value = '';
-  }
-
-  function handleDropGenerated(e: React.DragEvent<HTMLDivElement>) {
-    e.preventDefault();
-    const f = e.dataTransfer.files[0];
-    if (f) {
-      const label = prompt("Label for this photo (e.g. Corporate - Dark)?") || "Generated";
-      addGenerated(f, label);
-    }
-  }
-
-  function addGenerated(file: File, label: string) {
-    const id = `gen-${Date.now()}`;
-    const url = URL.createObjectURL(file);
-    setMyPhotos(prev => [...prev, { id, label, previewUrl: url, file }]);
-  }
-
-  async function downloadAllMyPhotos() {
-    if (myPhotos.length === 0) {
-      toast.error("Add some photos first");
-      return;
-    }
-    const zip = new JSZip();
-    for (const p of myPhotos) {
-      const buf = await p.file.arrayBuffer();
-      zip.file(`${p.label.replace(/[^a-z0-9]/gi, '_')}.jpg`, buf);
-    }
-    const blob = await zip.generateAsync({ type: "blob" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `my-headshots-${Date.now()}.zip`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
 }

@@ -134,7 +134,7 @@ export default function HeadshotStudio() {
 
       toast.success(`Generated: ${cat.name} - ${bg.label}`);
     } catch (err: any) {
-      toast.error(err.message || 'Generation failed. Check XAI_API_KEY in Vercel env vars.');
+      toast.error(err.message || 'Generation failed. Check XAI_API_KEY in Vercel env vars. [xai-v3b3dbd8]');
     } finally {
       setIsGenerating(false);
     }

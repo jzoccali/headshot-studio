@@ -30,7 +30,7 @@ export async function POST(request: Request) {
     if (!process.env.XAI_API_KEY) {
       console.error('XAI_API_KEY is not set in environment');
       return NextResponse.json({ 
-        error: 'XAI_API_KEY is not configured. Add XAI_API_KEY in Vercel environment variables (and .env.local for local dev) and redeploy.' 
+        error: 'XAI_API_KEY is not configured. Add XAI_API_KEY in Vercel environment variables (and .env.local for local dev) and redeploy. [xai-v3b3dbd8]' 
       }, { status: 500 });
     }
 

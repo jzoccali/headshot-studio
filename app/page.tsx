@@ -24,10 +24,10 @@ type Background = {
 };
 
 const CATEGORIES: Category[] = [
-  { id: 'venture-capitalist', name: 'Venture Capitalist / Urban Strategist', description: 'LinkedIn, VC pitches, executive networks - charcoal wool suit, analytical prestige' },
-  { id: 'thought-leader', name: 'Thought Leader / Non-Profit Director', description: 'Academic, consulting, foundations - camel blazer + rollneck, warm compassionate authority' },
-  { id: 'digital-architect', name: 'Digital Architect / Tech Lead', description: 'Startup tech leads, engineering - technical knit polo, modern innovative energy' },
-  { id: 'arts-administrator', name: 'Arts Administrator / Cultural Consultant', description: 'Creative directors, cultural leaders - minimalist black blazer + silk, sophisticated gallery style' },
+  { id: 'venture-capitalist', name: 'Venture Capitalist / Urban Strategist', description: 'LinkedIn, VC pitches, executive networks — charcoal wool suit, analytical prestige' },
+  { id: 'thought-leader', name: 'Thought Leader / Non-Profit Director', description: 'Academic, consulting, foundations — camel blazer + rollneck, warm compassionate authority' },
+  { id: 'digital-architect', name: 'Digital Architect / Tech Lead', description: 'Startup tech leads, engineering — technical knit polo, modern innovative energy' },
+  { id: 'arts-administrator', name: 'Arts Administrator / Cultural Consultant', description: 'Creative directors, cultural leaders — minimalist black blazer + silk, sophisticated gallery style' },
 ];
 
 const BACKGROUNDS: Background[] = [
@@ -50,6 +50,7 @@ export default function HeadshotStudio() {
   const [subjectReady, setSubjectReady] = useState(false);
   const [generatedResults, setGeneratedResults] = useState<GeneratedResult[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [consent, setConsent] = useState(false);
 
   const handleFiles = async (files: FileList | null) => {
     if (!files) return;
@@ -86,17 +87,25 @@ export default function HeadshotStudio() {
   };
 
   const buildSubject = () => {
-    if (sources.length === 0) {
-      toast.error("Upload some photos first");
+    if (sources.length < 2) {
+      toast.error("Upload at least 2-4 photos for a good consistent composite (more angles/lighting = better results)");
       return;
     }
     setSubjectReady(true);
-    toast.success(`Consistent subject created from ${sources.length} photos (all will be used as references for face consistency)`);
+    toast.success(`Consistent subject rendition created from ${sources.length} photos. All will be used as references.`);
   };
 
   const generateVariation = async (cat: Category, bg: Background) => {
-    if (referenceUrls.length === 0) {
-      toast.error("Upload and build subject from your photos first");
+    if (!subjectReady || referenceUrls.length === 0) {
+      toast.error("Upload photos and build the subject first");
+      return;
+    }
+    if (!consent) {
+      toast.error("Please check the consent box to proceed (biometric data processing)");
+      return;
+    }
+    if (generatedResults.length >= 24) {
+      toast.error("Session limit reached (24 images). Start a new session or download what you have.");
       return;
     }
 
@@ -106,7 +115,7 @@ export default function HeadshotStudio() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          references: referenceUrls, // all photos for composite / consistent subject
+          references: referenceUrls,
           categoryId: cat.id,
           backgroundId: bg.id,
           label: `${cat.name} - ${bg.label}`,
@@ -125,7 +134,7 @@ export default function HeadshotStudio() {
 
       toast.success(`Generated: ${cat.name} - ${bg.label}`);
     } catch (err: any) {
-      toast.error(err.message || 'Generation failed. Make sure REPLICATE_API_TOKEN is set in Vercel.');
+      toast.error(err.message || 'Generation failed. Check Replicate key in Vercel env.');
     } finally {
       setIsGenerating(false);
     }
@@ -156,18 +165,16 @@ export default function HeadshotStudio() {
       <div className="max-w-6xl mx-auto">
         <header className="mb-8">
           <h1 className="text-4xl font-semibold tracking-tight">Headshot Studio</h1>
-          <p className="text-zinc-400 mt-1">
-            Upload photos of the subject. The app creates a consistent rendition from all of them. 
-            Generate professional variations by changing clothes and backgrounds. Download real photos directly from the site.
-          </p>
+          <p className="text-zinc-400 mt-1">Upload multiple photos of yourself. The app creates a consistent rendition of you from all of them. Generate professional variations by changing clothes and backgrounds. Download real photos from the site.</p>
+          <div className="mt-2 text-xs text-amber-400">AI-generated images. For personal use. Disclose as AI-generated when used professionally.</div>
         </header>
 
-        {/* 1. Upload */}
+        {/* 1. Upload + Consent + Subject */}
         <section className="mb-10">
           <div className="mb-3 flex items-center justify-between">
             <div>
-              <div className="text-lg font-medium">1. Upload photos of the subject</div>
-              <div className="text-sm text-zinc-400">Multiple photos (different angles/lighting) help create a better consistent rendition.</div>
+              <div className="text-lg font-medium">1. Upload 4-6 photos of yourself</div>
+              <div className="text-sm text-zinc-400">Different angles, lighting, and expressions give the best consistent composite result.</div>
             </div>
             <label className="cursor-pointer flex items-center gap-2 px-5 py-2 bg-white text-black rounded-2xl text-sm font-medium hover:bg-zinc-200 active:bg-white">
               <Upload className="w-4 h-4" /> Add Photos
@@ -176,38 +183,50 @@ export default function HeadshotStudio() {
           </div>
 
           {sources.length > 0 && (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-6 gap-3 mb-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 mb-4">
               {sources.map(s => (
-                <div key={s.id} className="relative group rounded-2xl overflow-hidden border border-zinc-800 bg-zinc-900">
+                <div key={s.id} className="relative rounded-2xl overflow-hidden border border-zinc-800 bg-zinc-900">
                   <img src={s.previewUrl} className="w-full aspect-square object-cover" alt={s.name} />
                   <div className="p-2 text-[10px] truncate bg-black/60">{s.name}</div>
-                  <button onClick={() => removeSource(s.id)} className="absolute top-2 right-2 bg-black/70 p-1 rounded-full opacity-0 group-hover:opacity-100">
-                    <X className="w-3 h-3" />
-                  </button>
+                  <button onClick={() => removeSource(s.id)} className="absolute top-2 right-2 bg-black/70 p-1 rounded-full"><X className="w-3 h-3" /></button>
                 </div>
               ))}
             </div>
           )}
 
+          <div className="mb-4 p-4 border border-amber-600 bg-amber-950/30 rounded-2xl text-sm">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input 
+                type="checkbox" 
+                checked={consent} 
+                onChange={(e) => setConsent(e.target.checked)} 
+                className="mt-1" 
+              />
+              <span>
+                I consent to the processing of my facial images (biometric data) solely for generating headshot variations. 
+                My source photos will be used only for this generation and automatically deleted afterward. 
+                I understand all outputs are AI-generated and I will disclose them as such if used professionally. 
+                This tool is for self-use only.
+              </span>
+            </label>
+            <div className="text-[10px] text-amber-400 mt-2 ml-6">Source photos are deleted after generation. No data is used for training.</div>
+          </div>
+
           <button
             onClick={buildSubject}
-            disabled={sources.length === 0}
+            disabled={sources.length < 2}
             className="px-6 py-2.5 bg-emerald-500 hover:bg-emerald-600 disabled:bg-zinc-700 rounded-2xl text-sm font-medium"
           >
-            Create consistent rendition of the subject from these photos
+            Create consistent rendition of the subject from these photos (recommended: 4-6 photos)
           </button>
-          {subjectReady && (
-            <div className="mt-2 text-emerald-400 text-sm">
-              ✓ Consistent subject ready. All uploaded photos will be used as references for face consistency.
-            </div>
-          )}
+          {subjectReady && <div className="mt-2 text-emerald-400 text-sm">✓ Consistent subject ready. All photos will be used as references for face consistency.</div>}
         </section>
 
-        {/* 2. Generate variations */}
+        {/* 2. Variations */}
         <section className="mb-10">
           <div className="mb-4">
-            <div className="text-lg font-medium">2. Generate variations (different clothes &amp; backgrounds)</div>
-            <div className="text-sm text-zinc-400">Click any button to generate a real photo. The app uses your uploaded photos as references + the professional style prompt.</div>
+            <div className="text-lg font-medium">2. Generate variations — different clothes &amp; backgrounds</div>
+            <div className="text-sm text-zinc-400">The app changes clothing, pose, and background per the professional style while keeping your face consistent.</div>
           </div>
 
           <div className="grid md:grid-cols-2 gap-4">
@@ -220,7 +239,7 @@ export default function HeadshotStudio() {
                     <button
                       key={bg.id}
                       onClick={() => generateVariation(cat, bg)}
-                      disabled={isGenerating || !subjectReady}
+                      disabled={isGenerating || !subjectReady || !consent}
                       className="text-left text-sm border border-zinc-700 hover:border-zinc-500 rounded-xl px-3 py-2 disabled:opacity-50 hover:bg-zinc-800"
                     >
                       <div className="font-medium">Generate {bg.label}</div>
@@ -232,18 +251,16 @@ export default function HeadshotStudio() {
             ))}
           </div>
 
-          {isGenerating && (
-            <div className="mt-4 text-sm text-blue-400">Generating photo... (this can take 10-30s depending on the model)</div>
-          )}
+          {isGenerating && <div className="mt-3 text-sm text-blue-400">Generating photo (10-40s depending on model)...</div>}
         </section>
 
-        {/* 3. Results - download from here */}
+        {/* 3. Your generated photos — download from the site */}
         {generatedResults.length > 0 && (
           <section className="mb-10">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <div className="text-lg font-medium">3. Your generated photos (download from the site)</div>
-                <div className="text-sm text-zinc-400">Real photos generated by the app. Add more by clicking the buttons above.</div>
+                <div className="text-lg font-medium">3. Your photos (download from here)</div>
+                <div className="text-sm text-zinc-400">Real AI-generated headshots. All images include "AI-generated" disclosure.</div>
               </div>
               <button
                 onClick={async () => {
@@ -274,6 +291,7 @@ export default function HeadshotStudio() {
                   <img src={r.imageUrl} className="w-full aspect-square object-cover" alt={r.label} />
                   <div className="p-3 text-sm">
                     <div className="font-medium">{r.label}</div>
+                    <div className="text-[10px] text-amber-400 mb-1">AI-generated headshot</div>
                     <a href={r.imageUrl} download={`${r.label}.jpg`} className="text-xs text-blue-400 hover:underline">Download JPG</a>
                   </div>
                 </div>
@@ -283,7 +301,7 @@ export default function HeadshotStudio() {
         )}
 
         <div className="text-center text-xs text-zinc-500 mt-12">
-          Upload photos → consistent subject from all of them (used as references) → click to generate variations (clothes + backgrounds per the 6 styles) → download real photos from this site.
+          Self-use only • Source photos deleted after generation • All outputs are AI-generated — disclose when used professionally • 4-6 varied photos recommended for best results
         </div>
       </div>
     </div>

@@ -134,7 +134,7 @@ export default function HeadshotStudio() {
 
       toast.success(`Generated: ${cat.name} - ${bg.label}`);
     } catch (err: any) {
-      toast.error(err.message || 'Generation failed. Check Replicate key in Vercel env.');
+      toast.error(err.message || 'Generation failed. Check XAI_API_KEY in Vercel env vars.');
     } finally {
       setIsGenerating(false);
     }
@@ -226,7 +226,7 @@ export default function HeadshotStudio() {
         <section className="mb-10">
           <div className="mb-4">
             <div className="text-lg font-medium">2. Generate variations — different clothes &amp; backgrounds</div>
-            <div className="text-sm text-zinc-400">The app changes clothing, pose, and background per the professional style while keeping your face consistent.</div>
+            <div className="text-sm text-zinc-400">The app changes clothing, pose, and background per the professional style while keeping your face consistent. Powered by Grok Imagine (up to 3 of your photos used as direct visual references per generation for identity lock; the prompt references all of them).</div>
           </div>
 
           <div className="grid md:grid-cols-2 gap-4">
@@ -251,7 +251,7 @@ export default function HeadshotStudio() {
             ))}
           </div>
 
-          {isGenerating && <div className="mt-3 text-sm text-blue-400">Generating photo (10-40s depending on model)...</div>}
+          {isGenerating && <div className="mt-3 text-sm text-blue-400">Generating with Grok Imagine (usually 10-30s)...</div>}
         </section>
 
         {/* 3. Your generated photos — download from the site */}

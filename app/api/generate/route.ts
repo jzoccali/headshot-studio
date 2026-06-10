@@ -1,13 +1,9 @@
-import Replicate from 'replicate';
 import { put, del } from '@vercel/blob';
 import { NextResponse } from 'next/server';
 
-const replicate = new Replicate({
-  auth: process.env.REPLICATE_API_TOKEN,
-});
-
-// Good IP-Adapter model for face consistency from reference photos while allowing clothing and background changes via prompt.
-const MODEL = 'fofr/flux-dev-ipadapter';
+// Uses Grok / xAI Imagine for reference-based editing (preserve likeness from your uploaded photos
+// while applying the exact premium clothing, lighting, expression, and background variations).
+// Calls the public xAI API with XAI_API_KEY. Supports up to 3 reference images per edit for strong composite identity lock.
 
 // The 4 premium full prompts with the dark '#141414' background (as provided by user).
 // We will swap the background sentence for modularity (4 backgrounds per category).
@@ -31,10 +27,10 @@ const BACKGROUND_SENTENCES: Record<string, string> = {
 
 export async function POST(request: Request) {
   try {
-    if (!process.env.REPLICATE_API_TOKEN) {
-      console.error('REPLICATE_API_TOKEN is not set in environment');
+    if (!process.env.XAI_API_KEY) {
+      console.error('XAI_API_KEY is not set in environment');
       return NextResponse.json({ 
-        error: 'Replicate API key is not configured. Please add REPLICATE_API_TOKEN in Vercel environment variables and redeploy.' 
+        error: 'XAI_API_KEY is not configured. Add XAI_API_KEY in Vercel environment variables (and .env.local for local dev) and redeploy.' 
       }, { status: 500 });
     }
 
@@ -63,29 +59,76 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid background' }, { status: 400 });
     }
 
-    // Swap the background sentence for the chosen one (keeps the premium wording for that archetype)
+    // Swap the background sentence for the chosen one (keeps the exact premium wording + engineering secrets for that archetype)
     fullPrompt = fullPrompt.replace("The background is a solid '#141414' neutral studio.", bgSentence);
 
-    // Use first reference as main for the model; the prompt emphasizes using all for composite.
-    const mainReference = references[0];
+    // Pass up to 3 of the uploaded photos as direct visual references to the Grok Imagine edit model.
+    // This gives strong "composite" identity lock (exact facial structure + features) while the prompt
+    // controls clothing, expression, pose, lighting, and background. (Upload 4-6 varied photos for best results;
+    // the prompt text still references "all" conceptually; pixel refs are capped at the API's current multi-edit limit.)
+    const refUrls = references.slice(0, 3);
 
-    const output = await replicate.run(MODEL as `${string}/${string}`, {
-      input: {
-        prompt: fullPrompt,
-        image: mainReference,
-        image_strength: 0.72,
-        num_outputs: 1,
-        guidance_scale: 3.5,
-        num_inference_steps: 28,
-      },
-    });
+    const model = 'grok-imagine-image-quality';
 
-    const generatedUrl = Array.isArray(output) ? output[0] : output;
-    if (!generatedUrl || typeof generatedUrl !== 'string') {
-      throw new Error('No image returned from model');
+    const editBody: any = {
+      model,
+      prompt: fullPrompt,
+      aspect_ratio: '1:1', // square works well for the headshot gallery + consistent display
+    };
+
+    if (refUrls.length === 1) {
+      editBody.image = { url: refUrls[0], type: 'image_url' };
+    } else {
+      editBody.images = refUrls.map((u) => ({ url: u, type: 'image_url' }));
     }
 
-    // Store in Blob for permanent public URL on the site
+    const xaiRes = await fetch('https://api.x.ai/v1/images/edits', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.XAI_API_KEY}`,
+      },
+      body: JSON.stringify(editBody),
+    });
+
+    if (!xaiRes.ok) {
+      const errText = await xaiRes.text().catch(() => '');
+      throw new Error(`xAI edit failed (${xaiRes.status}): ${errText}`);
+    }
+
+    const xaiJson = await xaiRes.json();
+    // xAI responses typically expose .url directly (or OpenAI-compat data[0].url). Handle both.
+    let generatedUrl: string | undefined =
+      xaiJson?.url ||
+      xaiJson?.data?.[0]?.url ||
+      (Array.isArray(xaiJson) ? xaiJson[0] : undefined);
+
+    if (!generatedUrl || typeof generatedUrl !== 'string') {
+      // Fallback for base64 responses if the API returned b64_json instead of url
+      const b64 = xaiJson?.b64_json || xaiJson?.data?.[0]?.b64_json;
+      if (b64) {
+        // Convert base64 to a blob we can store (rare for this endpoint but defensive)
+        const byteCharacters = atob(b64);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const imageBlob = new Blob([byteArray], { type: 'image/jpeg' });
+        const filename = `generated/${Date.now()}-${(label || `${categoryId}-${backgroundId}`).replace(/\s+/g, '-')}.jpg`;
+        const blob = await put(filename, imageBlob, { access: 'public', contentType: 'image/jpeg' });
+
+        try { await del(references); } catch (e) { console.warn('Could not delete source references:', e); }
+
+        return NextResponse.json({
+          imageUrl: blob.url,
+          label: label || `${categoryId} - ${backgroundId}`,
+        });
+      }
+      throw new Error('No image URL (or base64) returned from xAI');
+    }
+
+    // Store the xAI result in Vercel Blob so the site has a stable public URL for downloads
     const imageResponse = await fetch(generatedUrl);
     const imageBlob = await imageResponse.blob();
     const filename = `generated/${Date.now()}-${(label || `${categoryId}-${backgroundId}`).replace(/\s+/g, '-')}.jpg`;
@@ -94,7 +137,7 @@ export async function POST(request: Request) {
       contentType: 'image/jpeg',
     });
 
-    // Auto-delete source photos after generation for privacy (biometric best practice)
+    // Privacy: auto-delete the source photos the user uploaded (BIPA-style best practice)
     try {
       await del(references);
     } catch (e) {

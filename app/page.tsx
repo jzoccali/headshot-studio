@@ -55,6 +55,7 @@ export default function HeadshotStudio() {
   const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0 });
   const [failedVariations, setFailedVariations] = useState<Array<{categoryId: string, backgroundId: string, label: string}>>([]);
   const [needsReupload, setNeedsReupload] = useState(false);
+  const [masterReferenceUrl, setMasterReferenceUrl] = useState<string | null>(null);
   const [isBuildingSubject, setIsBuildingSubject] = useState(false);
 
   const handleFiles = async (files: FileList | null) => {
@@ -141,23 +142,52 @@ export default function HeadshotStudio() {
     setSubjectReady(false);
   };
 
-  const buildSubject = () => {
+  const buildSubject = async () => {
     if (sources.length < 2) {
       toast.error("Upload at least 2-4 photos for a good consistent composite (more angles/lighting = better results)");
       return;
     }
     setIsBuildingSubject(true);
-    // Brief deliberate pause so the UI clearly shows "preparing" before the checkmark.
-    // This prevents the jarring "immediately says subject is ready" after clicking the button.
-    setTimeout(() => {
-      setSubjectReady(true);
+
+    const validRefs = referenceUrls.filter((r): r is string => typeof r === 'string' && r.startsWith('http'));
+    if (validRefs.length === 0) {
+      toast.error("No valid reference photos. Please re-upload your source images and try again.");
       setIsBuildingSubject(false);
-      toast.success(`Consistent subject rendition created from ${sources.length} photos. All will be used as references.`);
-    }, 900);
+      return;
+    }
+
+    try {
+      // Generate a "master" consistent reference image using all your uploaded photos.
+      // This bakes in the composite identity from all sources into a single strong reference.
+      // All subsequent variations will use this master as their single reference for better reliability and consistency.
+      const res = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          references: validRefs,
+          categoryId: 'venture-capitalist', // neutral starting style for the master; clothing overridden in variations
+          backgroundId: 'dark',
+          label: 'Master Reference',
+        }),
+      });
+
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      setMasterReferenceUrl(data.imageUrl);
+      setSubjectReady(true);
+      toast.success(`Consistent subject rendition created from ${sources.length} photos. All variations will now use this master reference for strong identity lock.`);
+    } catch (err: any) {
+      console.error('Failed to build master reference', err);
+      toast.error(`Failed to build consistent subject: ${err.message}. Please try again or re-upload photos.`);
+      setMasterReferenceUrl(null);
+    } finally {
+      setIsBuildingSubject(false);
+    }
   };
 
   const generateVariation = async (cat: Category, bg: Background) => {
-    if (!subjectReady || referenceUrls.length === 0) {
+    if (!subjectReady) {
       toast.error("Upload photos and build the subject first");
       return;
     }
@@ -170,9 +200,8 @@ export default function HeadshotStudio() {
       return;
     }
 
-    // Client-side sanitization too (in case old polluted state from before the upload fix)
-    const validRefs = referenceUrls.filter((r): r is string => typeof r === 'string' && r.startsWith('http'));
-    if (validRefs.length === 0) {
+    const refsToUse = masterReferenceUrl ? [masterReferenceUrl] : referenceUrls.filter((r): r is string => typeof r === 'string' && r.startsWith('http'));
+    if (refsToUse.length === 0) {
       toast.error("No valid reference photos. Please re-upload your source images and try again.");
       return;
     }
@@ -183,7 +212,7 @@ export default function HeadshotStudio() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          references: validRefs,
+          references: refsToUse,
           categoryId: cat.id,
           backgroundId: bg.id,
           label: `${cat.name} - ${bg.label}`,
@@ -219,8 +248,8 @@ export default function HeadshotStudio() {
       return;
     }
 
-    const validRefs = referenceUrls.filter((r): r is string => typeof r === 'string' && r.startsWith('http'));
-    if (validRefs.length === 0) {
+    const refsToUse = masterReferenceUrl ? [masterReferenceUrl] : referenceUrls.filter((r): r is string => typeof r === 'string' && r.startsWith('http'));
+    if (refsToUse.length === 0) {
       toast.error("No valid reference photos. Please re-upload your source images and try again.");
       return;
     }
@@ -253,7 +282,7 @@ export default function HeadshotStudio() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                  references: validRefs,
+                  references: refsToUse,
                   categoryId: cat.id,
                   backgroundId: bg.id,
                   label,
@@ -323,7 +352,7 @@ export default function HeadshotStudio() {
         let success = false;
         for (let attempt = 0; attempt < 3 && !success; attempt++) {
           try {
-            const currentValid = referenceUrls.filter((r): r is string => typeof r === 'string' && r.startsWith('http'));
+            const currentValid = masterReferenceUrl ? [masterReferenceUrl] : referenceUrls.filter((r): r is string => typeof r === 'string' && r.startsWith('http'));
             const res = await fetch('/api/generate', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -380,8 +409,8 @@ export default function HeadshotStudio() {
       return;
     }
 
-    const validRefs = referenceUrls.filter((r): r is string => typeof r === 'string' && r.startsWith('http'));
-    if (validRefs.length === 0) {
+    const refsToUse = masterReferenceUrl ? [masterReferenceUrl] : referenceUrls.filter((r): r is string => typeof r === 'string' && r.startsWith('http'));
+    if (refsToUse.length === 0) {
       toast.error("No valid reference photos. Please re-upload your source images and try again.");
       return;
     }
@@ -403,7 +432,7 @@ export default function HeadshotStudio() {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                references: validRefs,
+                references: refsToUse,
                 categoryId: cat.id,
                 backgroundId: bg.id,
                 label,
@@ -510,6 +539,7 @@ export default function HeadshotStudio() {
                     setSources([]);
                     setReferenceUrls([]);
                     setSubjectReady(false);
+                    setMasterReferenceUrl(null);
                     setNeedsReupload(false);
                     setFailedVariations([]);
                     toast.info("Sources cleared. Re-upload your photos.");

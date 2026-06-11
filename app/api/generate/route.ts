@@ -76,9 +76,11 @@ export async function POST(request: Request) {
 
     const refUrls = validReferences.slice(0, 3);
 
-    // Pre-validate references so we can give a clear, actionable error instead of a cryptic xAI 404.
-    // If any reference 404s, it almost always means the photos were uploaded to a previous/deleted Blob store
-    // before the current "headshot-photos" store + token was properly connected.
+    // Pre-validate references (HEAD) and convert to inline base64 data URIs.
+    // This way xAI never has to fetch the URLs itself (avoids the "Fetching image failed 404" errors
+    // when the Blob store the photos live in is not the currently connected one, or transient access issues).
+    // If any reference is bad, we give a clear message telling the user to re-upload after the correct store is connected.
+    const referenceImages: string[] = [];
     for (const refUrl of refUrls) {
       try {
         const head = await fetch(refUrl, { method: 'HEAD' });
@@ -87,8 +89,20 @@ export async function POST(request: Request) {
             error: `One of your source photos is no longer accessible (HTTP ${head.status}). This usually means the photos were uploaded before the correct Blob store was connected in the Vercel dashboard. Please re-upload your original photos now (after confirming the "headshot-photos" store is connected with the read-write token), then try generating again.` 
           }, { status: 400 });
         }
+
+        const imgRes = await fetch(refUrl);
+        if (!imgRes.ok) {
+          return NextResponse.json({ 
+            error: `Failed to read one of your source photos (HTTP ${imgRes.status}). Please re-upload.` 
+          }, { status: 400 });
+        }
+        const arrayBuffer = await imgRes.arrayBuffer();
+        const base64 = Buffer.from(arrayBuffer).toString('base64');
+        referenceImages.push(`data:image/jpeg;base64,${base64}`);
       } catch (e) {
-        // Network issue or other — let xAI try, or surface later
+        return NextResponse.json({ 
+          error: 'Failed to process one of your source photos. Please re-upload your original photos and try again.' 
+        }, { status: 400 });
       }
     }
 
@@ -100,10 +114,11 @@ export async function POST(request: Request) {
       aspect_ratio: '1:1', // square works well for the headshot gallery + consistent display
     };
 
-    if (refUrls.length === 1) {
-      editBody.image = { url: refUrls[0], type: 'image_url' };
+    // Send references as inline base64 data URIs (no external fetch by xAI).
+    if (referenceImages.length === 1) {
+      editBody.image = referenceImages[0];
     } else {
-      editBody.images = refUrls.map((u) => ({ url: u, type: 'image_url' }));
+      editBody.images = referenceImages;
     }
 
     // Call xAI with retry for transient fetch/404 errors on the reference images

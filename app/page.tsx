@@ -451,7 +451,15 @@ export default function HeadshotStudio() {
           >
             Create consistent rendition of the subject from these photos (recommended: 4-6 photos)
           </button>
-          {subjectReady && <div className="mt-2 text-emerald-400 text-sm">✓ Consistent subject ready. All photos will be used as references for face consistency.</div>}
+          {subjectReady && !isGenerating && <div className="mt-2 text-emerald-400 text-sm">✓ Consistent subject ready. All photos will be used as references for face consistency.</div>}
+          {isGenerating && (
+            <div className="mt-2 text-blue-400 text-sm flex items-center gap-2">
+              <span className="animate-pulse">●</span> 
+              Preparing / generating your headshots with Grok Imagine...
+              {generatedResults.length > 0 && ` (${generatedResults.length} complete so far)`}
+              <span className="text-xs text-blue-300 ml-2">(can take several minutes for a full set)</span>
+            </div>
+          )}
         </section>
 
         {/* 2. Variations */}
@@ -501,7 +509,12 @@ export default function HeadshotStudio() {
             ))}
           </div>
 
-          {isGenerating && <div className="mt-3 text-sm text-blue-400">Generating with Grok Imagine (usually 10-30s)...</div>}
+          {isGenerating && (
+            <div className="mt-3 text-sm text-blue-400 flex items-center gap-2">
+              <span className="animate-pulse">●</span> Generating with Grok Imagine...
+              {generatedResults.length > 0 && ` (${generatedResults.length} so far)`}
+            </div>
+          )}
         </section>
 
         {/* 3. Your generated photos — download from the site */}

@@ -223,41 +223,57 @@ export default function HeadshotStudio() {
     try {
       for (const cat of CATEGORIES) {
         for (const bg of BACKGROUNDS) {
+          const label = `${cat.name} - ${bg.label}`;
+
+          // Skip if we already have this exact variation from a previous run
+          if (generatedResults.some(r => r.label === label)) {
+            continue;
+          }
+
           if (generatedResults.length >= 24) {
             toast.error("Session limit reached (24 images).");
             break;
           }
-          try {
-            const res = await fetch('/api/generate', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                references: validRefs,
-                categoryId: cat.id,
-                backgroundId: bg.id,
-                label: `${cat.name} - ${bg.label}`,
-              }),
-            });
 
-            const data = await res.json();
-            if (data.error) throw new Error(data.error);
+          let success = false;
+          for (let attempt = 0; attempt < 2 && !success; attempt++) {  // 1 retry
+            try {
+              const res = await fetch('/api/generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  references: validRefs,
+                  categoryId: cat.id,
+                  backgroundId: bg.id,
+                  label,
+                }),
+              });
 
-            setGeneratedResults(prev => [...prev, {
-              imageUrl: data.imageUrl,
-              label: data.label || `${cat.name} - ${bg.label}`,
-              categoryName: cat.name,
-              backgroundLabel: bg.label,
-            }]);
+              const data = await res.json();
+              if (data.error) throw new Error(data.error);
 
-            generatedThisRun++;
-            // small delay between calls to be nice to the image API rate limits
-            if (generatedThisRun < total) {
-              await new Promise(resolve => setTimeout(resolve, 400));
+              setGeneratedResults(prev => [...prev, {
+                imageUrl: data.imageUrl,
+                label: data.label || label,
+                categoryName: cat.name,
+                backgroundLabel: bg.label,
+              }]);
+
+              generatedThisRun++;
+              success = true;
+            } catch (err: any) {
+              console.error(`Failed to generate ${label} (attempt ${attempt + 1})`, err);
+              if (attempt === 1) {
+                toast.error(`Failed ${label}: ${err.message}`);
+              }
+              // small backoff before retry
+              if (attempt === 0) await new Promise(r => setTimeout(r, 800));
             }
-          } catch (err: any) {
-            console.error(`Failed to generate ${cat.name} - ${bg.label}`, err);
-            toast.error(`Failed ${cat.name} - ${bg.label}: ${err.message}`);
-            // continue with the rest
+          }
+
+          // Rate-limit friendly delay between successful or final attempts
+          if (generatedThisRun < total) {
+            await new Promise(resolve => setTimeout(resolve, 1200));
           }
         }
       }
@@ -289,34 +305,48 @@ export default function HeadshotStudio() {
 
     try {
       for (const bg of BACKGROUNDS) {
+        const label = `${cat.name} - ${bg.label}`;
+
+        if (generatedResults.some(r => r.label === label)) continue;
         if (generatedResults.length >= 24) break;
-        try {
-          const res = await fetch('/api/generate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              references: validRefs,
-              categoryId: cat.id,
-              backgroundId: bg.id,
-              label: `${cat.name} - ${bg.label}`,
-            }),
-          });
 
-          const data = await res.json();
-          if (data.error) throw new Error(data.error);
+        let success = false;
+        for (let attempt = 0; attempt < 2 && !success; attempt++) {
+          try {
+            const res = await fetch('/api/generate', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                references: validRefs,
+                categoryId: cat.id,
+                backgroundId: bg.id,
+                label,
+              }),
+            });
 
-          setGeneratedResults(prev => [...prev, {
-            imageUrl: data.imageUrl,
-            label: data.label || `${cat.name} - ${bg.label}`,
-            categoryName: cat.name,
-            backgroundLabel: bg.label,
-          }]);
+            const data = await res.json();
+            if (data.error) throw new Error(data.error);
 
-          generatedThisRun++;
-          await new Promise(resolve => setTimeout(resolve, 400));
-        } catch (err: any) {
-          console.error(`Failed to generate ${cat.name} - ${bg.label}`, err);
-          toast.error(`Failed ${cat.name} - ${bg.label}: ${err.message}`);
+            setGeneratedResults(prev => [...prev, {
+              imageUrl: data.imageUrl,
+              label: data.label || label,
+              categoryName: cat.name,
+              backgroundLabel: bg.label,
+            }]);
+
+            generatedThisRun++;
+            success = true;
+          } catch (err: any) {
+            console.error(`Failed to generate ${label} (attempt ${attempt + 1})`, err);
+            if (attempt === 1) {
+              toast.error(`Failed ${label}: ${err.message}`);
+            }
+            if (attempt === 0) await new Promise(r => setTimeout(r, 800));
+          }
+        }
+
+        if (generatedThisRun < BACKGROUNDS.length) {
+          await new Promise(resolve => setTimeout(resolve, 1200));
         }
       }
       toast.success(`Generated ${generatedThisRun} variations for ${cat.name}!`);

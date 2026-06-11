@@ -199,6 +199,132 @@ export default function HeadshotStudio() {
     }
   };
 
+  // Bulk generation for all 4 categories × 4 backgrounds = 16 variations
+  const generateAllVariations = async () => {
+    if (!subjectReady || referenceUrls.length === 0) {
+      toast.error("Upload photos and build the subject first");
+      return;
+    }
+    if (!consent) {
+      toast.error("Please check the consent box to proceed (biometric data processing)");
+      return;
+    }
+
+    const validRefs = referenceUrls.filter((r): r is string => typeof r === 'string' && r.startsWith('http'));
+    if (validRefs.length === 0) {
+      toast.error("No valid reference photos. Please re-upload your source images and try again.");
+      return;
+    }
+
+    setIsGenerating(true);
+    let generatedThisRun = 0;
+    const total = CATEGORIES.length * BACKGROUNDS.length;
+
+    try {
+      for (const cat of CATEGORIES) {
+        for (const bg of BACKGROUNDS) {
+          if (generatedResults.length >= 24) {
+            toast.error("Session limit reached (24 images).");
+            break;
+          }
+          try {
+            const res = await fetch('/api/generate', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                references: validRefs,
+                categoryId: cat.id,
+                backgroundId: bg.id,
+                label: `${cat.name} - ${bg.label}`,
+              }),
+            });
+
+            const data = await res.json();
+            if (data.error) throw new Error(data.error);
+
+            setGeneratedResults(prev => [...prev, {
+              imageUrl: data.imageUrl,
+              label: data.label || `${cat.name} - ${bg.label}`,
+              categoryName: cat.name,
+              backgroundLabel: bg.label,
+            }]);
+
+            generatedThisRun++;
+            // small delay between calls to be nice to the image API rate limits
+            if (generatedThisRun < total) {
+              await new Promise(resolve => setTimeout(resolve, 400));
+            }
+          } catch (err: any) {
+            console.error(`Failed to generate ${cat.name} - ${bg.label}`, err);
+            toast.error(`Failed ${cat.name} - ${bg.label}: ${err.message}`);
+            // continue with the rest
+          }
+        }
+      }
+      toast.success(`Generated ${generatedThisRun} new variations!`);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  // Generate all 4 backgrounds for one specific category (for finer control)
+  const generateAllForCategory = async (cat: Category) => {
+    if (!subjectReady || referenceUrls.length === 0) {
+      toast.error("Upload photos and build the subject first");
+      return;
+    }
+    if (!consent) {
+      toast.error("Please check the consent box to proceed (biometric data processing)");
+      return;
+    }
+
+    const validRefs = referenceUrls.filter((r): r is string => typeof r === 'string' && r.startsWith('http'));
+    if (validRefs.length === 0) {
+      toast.error("No valid reference photos. Please re-upload your source images and try again.");
+      return;
+    }
+
+    setIsGenerating(true);
+    let generatedThisRun = 0;
+
+    try {
+      for (const bg of BACKGROUNDS) {
+        if (generatedResults.length >= 24) break;
+        try {
+          const res = await fetch('/api/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              references: validRefs,
+              categoryId: cat.id,
+              backgroundId: bg.id,
+              label: `${cat.name} - ${bg.label}`,
+            }),
+          });
+
+          const data = await res.json();
+          if (data.error) throw new Error(data.error);
+
+          setGeneratedResults(prev => [...prev, {
+            imageUrl: data.imageUrl,
+            label: data.label || `${cat.name} - ${bg.label}`,
+            categoryName: cat.name,
+            backgroundLabel: bg.label,
+          }]);
+
+          generatedThisRun++;
+          await new Promise(resolve => setTimeout(resolve, 400));
+        } catch (err: any) {
+          console.error(`Failed to generate ${cat.name} - ${bg.label}`, err);
+          toast.error(`Failed ${cat.name} - ${bg.label}: ${err.message}`);
+        }
+      }
+      toast.success(`Generated ${generatedThisRun} variations for ${cat.name}!`);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
   const downloadAll = async () => {
     if (generatedResults.length === 0) {
       toast.error("Generate some photos first");
@@ -300,15 +426,33 @@ export default function HeadshotStudio() {
 
         {/* 2. Variations */}
         <section className="mb-10">
-          <div className="mb-4">
-            <div className="text-lg font-medium">2. Generate variations — different clothes &amp; backgrounds</div>
-            <div className="text-sm text-zinc-400">The app changes clothing, pose, and background per the professional style while keeping your face consistent. Powered by Grok Imagine (up to 3 of your photos used as direct visual references per generation for identity lock; the prompt references all of them).</div>
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <div className="text-lg font-medium">2. Generate variations — different clothes &amp; backgrounds</div>
+              <div className="text-sm text-zinc-400">The app changes clothing, pose, and background per the professional style while keeping your face consistent. Powered by Grok Imagine (up to 3 of your photos used as direct visual references per generation for identity lock; the prompt references all of them).</div>
+            </div>
+            <button
+              onClick={generateAllVariations}
+              disabled={isGenerating || !subjectReady || !consent}
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-zinc-700 rounded-2xl text-sm font-medium whitespace-nowrap"
+            >
+              Generate All 16 Variations
+            </button>
           </div>
 
           <div className="grid md:grid-cols-2 gap-4">
             {CATEGORIES.map(cat => (
               <div key={cat.id} className="rounded-2xl border border-zinc-800 p-4 bg-zinc-900">
-                <div className="font-semibold">{cat.name}</div>
+                <div className="flex items-center justify-between mb-1">
+                  <div className="font-semibold">{cat.name}</div>
+                  <button
+                    onClick={() => generateAllForCategory(cat)}
+                    disabled={isGenerating || !subjectReady || !consent}
+                    className="text-[10px] px-2 py-0.5 bg-zinc-800 hover:bg-zinc-700 rounded text-zinc-400"
+                  >
+                    All 4 backgrounds
+                  </button>
+                </div>
                 <div className="text-xs text-zinc-400 mb-3">{cat.description}</div>
                 <div className="grid grid-cols-2 gap-2">
                   {BACKGROUNDS.map(bg => (

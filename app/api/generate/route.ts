@@ -62,11 +62,23 @@ export async function POST(request: Request) {
     // Swap the background sentence for the chosen one (keeps the exact premium wording + engineering secrets for that archetype)
     fullPrompt = fullPrompt.replace("The background is a solid '#141414' neutral studio.", bgSentence);
 
+    // Sanitize: only keep real string URLs (frontend can send bad data on upload failures or removes).
+    // xAI requires actual http(s) strings for image.url — null/undefined/empty will 422.
+    const validReferences: string[] = (references || []).filter(
+      (r): r is string => typeof r === 'string' && r.length > 0 && r.startsWith('http')
+    );
+
+    if (validReferences.length === 0) {
+      return NextResponse.json({ 
+        error: 'No valid reference photos. Please re-upload your source images and try again.' 
+      }, { status: 400 });
+    }
+
     // Pass up to 3 of the uploaded photos as direct visual references to the Grok Imagine edit model.
     // This gives strong "composite" identity lock (exact facial structure + features) while the prompt
     // controls clothing, expression, pose, lighting, and background. (Upload 4-6 varied photos for best results;
     // the prompt text still references "all" conceptually; pixel refs are capped at the API's current multi-edit limit.)
-    const refUrls = references.slice(0, 3);
+    const refUrls = validReferences.slice(0, 3);
 
     const model = 'grok-imagine-image-quality';
 
@@ -118,7 +130,7 @@ export async function POST(request: Request) {
         const filename = `generated/${Date.now()}-${(label || `${categoryId}-${backgroundId}`).replace(/\s+/g, '-')}.jpg`;
         const blob = await put(filename, imageBlob, { access: 'public', contentType: 'image/jpeg' });
 
-        try { await del(references); } catch (e) { console.warn('Could not delete source references:', e); }
+        try { await del(validReferences); } catch (e) { console.warn('Could not delete source references:', e); }
 
         return NextResponse.json({
           imageUrl: blob.url,
@@ -138,8 +150,9 @@ export async function POST(request: Request) {
     });
 
     // Privacy: auto-delete the source photos the user uploaded (BIPA-style best practice)
+    // Only the valid ones we actually received.
     try {
-      await del(references);
+      await del(validReferences);
     } catch (e) {
       console.warn('Could not delete source references:', e);
     }

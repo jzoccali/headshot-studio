@@ -56,6 +56,7 @@ export default function HeadshotStudio() {
     if (!files) return;
     const newOnes: SourcePhoto[] = [];
     const newBlobUrls: string[] = [];
+    let failed = 0;
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
@@ -63,25 +64,56 @@ export default function HeadshotStudio() {
 
       const formData = new FormData();
       formData.append('file', file);
-      const uploadRes = await fetch('/api/upload', { method: 'POST', body: formData });
-      const { url } = await uploadRes.json();
 
-      const id = `src-${Date.now()}-${i}`;
-      newOnes.push({ id, name: file.name, previewUrl: URL.createObjectURL(file) });
-      newBlobUrls.push(url);
+      try {
+        const uploadRes = await fetch('/api/upload', { method: 'POST', body: formData });
+        if (!uploadRes.ok) {
+          const errData = await uploadRes.json().catch(() => ({}));
+          console.error('Upload failed', errData);
+          failed++;
+          continue;
+        }
+        const data = await uploadRes.json();
+        if (!data.url || typeof data.url !== 'string') {
+          failed++;
+          continue;
+        }
+
+        const id = `src-${Date.now()}-${i}`;
+        newOnes.push({ id, name: file.name, previewUrl: URL.createObjectURL(file) });
+        newBlobUrls.push(data.url);
+      } catch (e) {
+        console.error('Upload error for', file.name, e);
+        failed++;
+      }
     }
 
-    setSources(prev => [...prev, ...newOnes]);
-    setReferenceUrls(prev => [...prev, ...newBlobUrls]);
-    setSubjectReady(false);
-    toast.success(`Added ${newOnes.length} photo(s)`);
+    if (newOnes.length > 0) {
+      setSources(prev => [...prev, ...newOnes]);
+      setReferenceUrls(prev => [...prev, ...newBlobUrls]);
+      setSubjectReady(false);
+      toast.success(`Added ${newOnes.length} photo(s)`);
+    }
+    if (failed > 0) {
+      toast.error(`${failed} photo(s) failed to upload. Check your connection or try again.`);
+    }
+    if (newOnes.length === 0 && failed === 0) {
+      toast.error('No valid photos were uploaded.');
+    }
   };
 
   const removeSource = (id: string) => {
-    setSources(prev => {
-      const s = prev.find(x => x.id === id);
-      if (s) URL.revokeObjectURL(s.previewUrl);
-      return prev.filter(x => x.id !== id);
+    setSources(prevSources => {
+      const index = prevSources.findIndex(x => x.id === id);
+      if (index === -1) return prevSources;
+
+      const photo = prevSources[index];
+      if (photo) URL.revokeObjectURL(photo.previewUrl);
+
+      // Keep referenceUrls in sync (they are parallel arrays by upload order)
+      setReferenceUrls(prevRefs => prevRefs.filter((_, i) => i !== index));
+
+      return prevSources.filter((_, i) => i !== index);
     });
     setSubjectReady(false);
   };

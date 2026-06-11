@@ -484,7 +484,7 @@ export default function HeadshotStudio() {
               </div>
               <button
                 onClick={async () => {
-                  if (generatedResults.length === 0) return;
+                  if (generatedResults.length === 0 || isGenerating) return;
                   const zip = new JSZip();
                   for (const r of generatedResults) {
                     const res = await fetch(r.imageUrl);
@@ -499,11 +499,18 @@ export default function HeadshotStudio() {
                   a.click();
                   URL.revokeObjectURL(url);
                 }}
-                className="px-4 py-2 bg-white text-black rounded-2xl text-sm font-medium flex items-center gap-2"
+                disabled={isGenerating}
+                className="px-4 py-2 bg-white text-black rounded-2xl text-sm font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Download className="w-4 h-4" /> Download All as ZIP
               </button>
             </div>
+
+            {isGenerating && generatedResults.length > 0 && (
+              <div className="text-xs text-amber-400 -mt-2 mb-3">
+                Waiting for all generations to complete before the full ZIP is available. Individual JPG downloads work immediately.
+              </div>
+            )}
 
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
               {generatedResults.map((r, idx) => (

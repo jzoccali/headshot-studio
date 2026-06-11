@@ -54,6 +54,7 @@ export default function HeadshotStudio() {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0 });
   const [failedVariations, setFailedVariations] = useState<Array<{categoryId: string, backgroundId: string, label: string}>>([]);
+  const [isBuildingSubject, setIsBuildingSubject] = useState(false);
 
   const handleFiles = async (files: FileList | null) => {
     if (!files) return;
@@ -144,8 +145,14 @@ export default function HeadshotStudio() {
       toast.error("Upload at least 2-4 photos for a good consistent composite (more angles/lighting = better results)");
       return;
     }
-    setSubjectReady(true);
-    toast.success(`Consistent subject rendition created from ${sources.length} photos. All will be used as references.`);
+    setIsBuildingSubject(true);
+    // Brief deliberate pause so the UI clearly shows "preparing" before the checkmark.
+    // This prevents the jarring "immediately says subject is ready" after clicking the button.
+    setTimeout(() => {
+      setSubjectReady(true);
+      setIsBuildingSubject(false);
+      toast.success(`Consistent subject rendition created from ${sources.length} photos. All will be used as references.`);
+    }, 900);
   };
 
   const generateVariation = async (cat: Category, bg: Background) => {
@@ -518,12 +525,17 @@ export default function HeadshotStudio() {
 
           <button
             onClick={buildSubject}
-            disabled={sources.length < 2 || isUploading}
+            disabled={sources.length < 2 || isUploading || isBuildingSubject}
             className="px-6 py-2.5 bg-emerald-500 hover:bg-emerald-600 disabled:bg-zinc-700 rounded-2xl text-sm font-medium"
           >
-            Create consistent rendition of the subject from these photos (recommended: 4-6 photos)
+            {isBuildingSubject ? 'Building consistent rendition...' : 'Create consistent rendition of the subject from these photos (recommended: 4-6 photos)'}
           </button>
-          {subjectReady && !isGenerating && <div className="mt-2 text-emerald-400 text-sm">✓ Consistent subject ready. All photos will be used as references for face consistency.</div>}
+          {isBuildingSubject && (
+            <div className="mt-2 text-emerald-400 text-sm flex items-center gap-2">
+              <span className="animate-pulse">●</span> Preparing consistent subject from your photos...
+            </div>
+          )}
+          {subjectReady && !isGenerating && !isBuildingSubject && <div className="mt-2 text-emerald-400 text-sm">✓ Consistent subject ready. All photos will be used as references for face consistency.</div>}
           {isGenerating && (
             <div className="mt-2 text-blue-400 text-sm flex items-center gap-2">
               <span className="animate-pulse">●</span> 

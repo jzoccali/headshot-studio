@@ -53,6 +53,7 @@ export default function HeadshotStudio() {
   const [consent, setConsent] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0 });
+  const [failedVariations, setFailedVariations] = useState<Array<{categoryId: string, backgroundId: string, label: string}>>([]);
 
   const handleFiles = async (files: FileList | null) => {
     if (!files) return;
@@ -217,8 +218,10 @@ export default function HeadshotStudio() {
     }
 
     setIsGenerating(true);
+    setFailedVariations([]);
     let generatedThisRun = 0;
     const total = CATEGORIES.length * BACKGROUNDS.length;
+    const currentFailed: Array<{categoryId: string, backgroundId: string, label: string}> = [];
 
     try {
       for (const cat of CATEGORIES) {
@@ -236,7 +239,7 @@ export default function HeadshotStudio() {
           }
 
           let success = false;
-          for (let attempt = 0; attempt < 2 && !success; attempt++) {  // 1 retry
+          for (let attempt = 0; attempt < 3 && !success; attempt++) {  // up to 2 retries
             try {
               const res = await fetch('/api/generate', {
                 method: 'POST',
@@ -263,25 +266,94 @@ export default function HeadshotStudio() {
               success = true;
             } catch (err: any) {
               console.error(`Failed to generate ${label} (attempt ${attempt + 1})`, err);
-              if (attempt === 1) {
+              const delay = 1000 * Math.pow(1.5, attempt);  // exponential backoff
+              if (attempt < 2) {
+                await new Promise(r => setTimeout(r, delay));
+              } else {
+                currentFailed.push({categoryId: cat.id, backgroundId: bg.id, label});
                 toast.error(`Failed ${label}: ${err.message}`);
               }
-              // small backoff before retry
-              if (attempt === 0) await new Promise(r => setTimeout(r, 800));
             }
           }
 
-          // Rate-limit friendly delay between successful or final attempts
+          // Rate-limit friendly delay
           if (generatedThisRun < total) {
-            await new Promise(resolve => setTimeout(resolve, 1200));
+            await new Promise(resolve => setTimeout(resolve, 1500));
           }
         }
       }
-      toast.success(`Generated ${generatedThisRun} new variations!`);
+      if (currentFailed.length > 0) {
+        setFailedVariations(currentFailed);
+        toast.error(`Generated ${generatedThisRun} new variations. ${currentFailed.length} failed – use Retry button below.`);
+      } else {
+        toast.success(`Generated ${generatedThisRun} new variations!`);
+      }
     } finally {
       setIsGenerating(false);
     }
   };
+
+  const retryFailedVariations = async () => {
+    if (failedVariations.length === 0) return;
+    const toRetry = [...failedVariations];
+    setFailedVariations([]);
+    setIsGenerating(true);
+    let generatedThisRun = 0;
+    const stillFailed: Array<{categoryId: string, backgroundId: string, label: string}> = [];
+
+    try {
+      for (const item of toRetry) {
+        const cat = CATEGORIES.find(c => c.id === item.categoryId)!;
+        const bg = BACKGROUNDS.find(b => b.id === item.backgroundId)!;
+        const label = item.label;
+
+        if (generatedResults.some(r => r.label === label)) continue;
+
+        let success = false;
+        for (let attempt = 0; attempt < 3 && !success; attempt++) {
+          try {
+            const currentValid = referenceUrls.filter((r): r is string => typeof r === 'string' && r.startsWith('http'));
+            const res = await fetch('/api/generate', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                references: currentValid,
+                categoryId: cat.id,
+                backgroundId: bg.id,
+                label,
+              }),
+            });
+            const data = await res.json();
+            if (data.error) throw new Error(data.error);
+            setGeneratedResults(prev => [...prev, {
+              imageUrl: data.imageUrl,
+              label: data.label || label,
+              categoryName: cat.name,
+              backgroundLabel: bg.label,
+            }]);
+            generatedThisRun++;
+            success = true;
+          } catch (err: any) {
+            if (attempt === 2) {
+              stillFailed.push(item);
+              toast.error(`Retry failed ${label}: ${err.message}`);
+            }
+            await new Promise(r => setTimeout(r, 1000 * Math.pow(1.5, attempt)));
+          }
+        }
+        await new Promise(resolve => setTimeout(resolve, 1500));
+      }
+      if (stillFailed.length > 0) {
+        setFailedVariations(stillFailed);
+      }
+      toast.success(`Retried and generated ${generatedThisRun} more!`);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  // helper to get current valid refs (since state)
+  const validRefsFromState = () => referenceUrls.filter((r): r is string => typeof r === 'string' && r.startsWith('http'));
 
   // Generate all 4 backgrounds for one specific category (for finer control)
   const generateAllForCategory = async (cat: Category) => {
@@ -457,7 +529,7 @@ export default function HeadshotStudio() {
               <span className="animate-pulse">●</span> 
               Preparing / generating your headshots with Grok Imagine...
               {generatedResults.length > 0 && ` (${generatedResults.length} complete so far)`}
-              <span className="text-xs text-blue-300 ml-2">(can take several minutes for a full set)</span>
+              <span className="text-xs text-blue-300 ml-2">(can take several minutes for a full set – please be patient, images will appear as they finish)</span>
             </div>
           )}
         </section>
@@ -476,6 +548,14 @@ export default function HeadshotStudio() {
             >
               Generate All 16 Variations
             </button>
+            {failedVariations.length > 0 && !isGenerating && (
+              <button
+                onClick={retryFailedVariations}
+                className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 rounded-2xl text-xs font-medium whitespace-nowrap ml-2"
+              >
+                Retry {failedVariations.length} failed
+              </button>
+            )}
           </div>
 
           <div className="grid md:grid-cols-2 gap-4">

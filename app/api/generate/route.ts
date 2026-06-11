@@ -75,25 +75,11 @@ export async function POST(request: Request) {
     }
 
     // Pass up to 3 of the uploaded photos as direct visual references to the Grok Imagine edit model.
-    // Convert to base64 data URIs so xAI doesn't have to fetch the URLs (avoids 404s or access issues on references).
+    // Use the public Blob URLs directly. These should be stable and publicly fetchable.
     // This gives strong "composite" identity lock (exact facial structure + features) while the prompt
     // controls clothing, expression, pose, lighting, and background. (Upload 4-6 varied photos for best results;
     // the prompt text still references "all" conceptually; pixel refs are capped at the API's current multi-edit limit.)
     const refUrls = validReferences.slice(0, 3);
-    const referenceImages: string[] = [];
-    for (const refUrl of refUrls) {
-      try {
-        const imgRes = await fetch(refUrl);
-        if (!imgRes.ok) throw new Error(`Failed to fetch reference image: ${refUrl}`);
-        const arrayBuffer = await imgRes.arrayBuffer();
-        const base64 = Buffer.from(arrayBuffer).toString('base64');
-        referenceImages.push(`data:image/jpeg;base64,${base64}`);
-      } catch (e) {
-        console.error('Failed to convert reference to base64', refUrl, e);
-        // Fallback to URL (may cause issues but better than failing the whole thing)
-        referenceImages.push(refUrl);
-      }
-    }
 
     const model = 'grok-imagine-image-quality';
 
@@ -103,24 +89,43 @@ export async function POST(request: Request) {
       aspect_ratio: '1:1', // square works well for the headshot gallery + consistent display
     };
 
-    if (referenceImages.length === 1) {
-      editBody.image = { url: referenceImages[0], type: 'image_url' };
+    if (refUrls.length === 1) {
+      editBody.image = { url: refUrls[0], type: 'image_url' };
     } else {
-      editBody.images = referenceImages.map((b64) => ({ url: b64, type: 'image_url' }));
+      editBody.images = refUrls.map((u) => ({ url: u, type: 'image_url' }));
     }
 
-    const xaiRes = await fetch('https://api.x.ai/v1/images/edits', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.XAI_API_KEY}`,
-      },
-      body: JSON.stringify(editBody),
-    });
+    // Call xAI with retry for transient fetch/404 errors on the reference images
+    let xaiRes;
+    let lastErr;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      xaiRes = await fetch('https://api.x.ai/v1/images/edits', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.XAI_API_KEY}`,
+        },
+        body: JSON.stringify(editBody),
+      });
 
-    if (!xaiRes.ok) {
+      if (xaiRes.ok) break;
+
       const errText = await xaiRes.text().catch(() => '');
-      throw new Error(`xAI edit failed (${xaiRes.status}): ${errText}`);
+      lastErr = new Error(`xAI edit failed (${xaiRes.status}): ${errText}`);
+
+      // Only retry on 4xx/5xx that look like fetch/image problems (e.g. 404 on reference)
+      if (!errText.includes('Fetching image failed') && !errText.includes('404')) {
+        break;
+      }
+
+      if (attempt < 2) {
+        const backoff = 800 * (attempt + 1);
+        await new Promise(r => setTimeout(r, backoff));
+      }
+    }
+
+    if (!xaiRes || !xaiRes.ok) {
+      throw lastErr || new Error('xAI edit failed after retries');
     }
 
     const xaiJson = await xaiRes.json();

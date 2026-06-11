@@ -283,9 +283,9 @@ export default function HeadshotStudio() {
             }
           }
 
-          // Rate-limit friendly delay
+          // Rate-limit friendly delay (xAI image edits can be sensitive)
           if (generatedThisRun < total) {
-            await new Promise(resolve => setTimeout(resolve, 1500));
+            await new Promise(resolve => setTimeout(resolve, 2000));
           }
         }
       }
@@ -425,7 +425,7 @@ export default function HeadshotStudio() {
         }
 
         if (generatedThisRun < BACKGROUNDS.length) {
-          await new Promise(resolve => setTimeout(resolve, 1200));
+          await new Promise(resolve => setTimeout(resolve, 2000));
         }
       }
       toast.success(`Generated ${generatedThisRun} variations for ${cat.name}!`);

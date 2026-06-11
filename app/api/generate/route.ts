@@ -114,11 +114,12 @@ export async function POST(request: Request) {
       aspect_ratio: '1:1', // square works well for the headshot gallery + consistent display
     };
 
-    // Send references as inline base64 data URIs (no external fetch by xAI).
+    // Send references as base64 data URIs using the standard object format.
+    // This tells xAI it's a data URI so it doesn't try to HTTP fetch it (prevents the 404 "Fetching image failed").
     if (referenceImages.length === 1) {
-      editBody.image = referenceImages[0];
+      editBody.image = { url: referenceImages[0], type: "image_url" };
     } else {
-      editBody.images = referenceImages;
+      editBody.images = referenceImages.map((b64) => ({ url: b64, type: "image_url" }));
     }
 
     // Call xAI with retry for transient fetch/404 errors on the reference images

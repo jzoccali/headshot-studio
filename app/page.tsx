@@ -51,60 +51,74 @@ export default function HeadshotStudio() {
   const [generatedResults, setGeneratedResults] = useState<GeneratedResult[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [consent, setConsent] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0 });
 
   const handleFiles = async (files: FileList | null) => {
     if (!files) return;
-    const newOnes: SourcePhoto[] = [];
-    const newBlobUrls: string[] = [];
-    let failed = 0;
 
+    const validFiles = Array.from(files).filter(f => f.type.startsWith('image/'));
+    if (validFiles.length === 0) return;
+
+    setIsUploading(true);
+    setUploadProgress({ current: 0, total: validFiles.length });
+
+    let successCount = 0;
+    let failCount = 0;
     let lastUploadError = '';
 
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      if (!file.type.startsWith('image/')) continue;
-
-      const formData = new FormData();
-      formData.append('file', file);
+    for (let i = 0; i < validFiles.length; i++) {
+      const file = validFiles[i];
+      const id = `src-${Date.now()}-${i}`;
+      const previewUrl = URL.createObjectURL(file);
 
       try {
+        const formData = new FormData();
+        formData.append('file', file);
+
         const uploadRes = await fetch('/api/upload', { method: 'POST', body: formData });
         if (!uploadRes.ok) {
           const errData = await uploadRes.json().catch(() => ({}));
           console.error('Upload failed for', file.name, errData);
           lastUploadError = errData.error || `HTTP ${uploadRes.status}`;
-          failed++;
+          failCount++;
+          URL.revokeObjectURL(previewUrl);
           continue;
         }
+
         const data = await uploadRes.json();
         if (!data.url || typeof data.url !== 'string') {
           lastUploadError = 'Invalid response from server';
-          failed++;
+          failCount++;
+          URL.revokeObjectURL(previewUrl);
           continue;
         }
 
-        const id = `src-${Date.now()}-${i}`;
-        newOnes.push({ id, name: file.name, previewUrl: URL.createObjectURL(file) });
-        newBlobUrls.push(data.url);
+        // Add the photo card immediately when its upload succeeds (live feedback)
+        const source: SourcePhoto = { id, name: file.name, previewUrl };
+        setSources(prev => [...prev, source]);
+        setReferenceUrls(prev => [...prev, data.url]);
+        setSubjectReady(false);
+
+        successCount++;
+        setUploadProgress(p => ({ ...p, current: p.current + 1 }));
       } catch (e: any) {
         console.error('Upload error for', file.name, e);
         lastUploadError = e.message || 'Network error';
-        failed++;
+        failCount++;
+        URL.revokeObjectURL(previewUrl);
       }
     }
 
-    if (newOnes.length > 0) {
-      setSources(prev => [...prev, ...newOnes]);
-      setReferenceUrls(prev => [...prev, ...newBlobUrls]);
-      setSubjectReady(false);
-      toast.success(`Added ${newOnes.length} photo(s)`);
+    setIsUploading(false);
+    setUploadProgress({ current: 0, total: 0 });
+
+    if (successCount > 0) {
+      toast.success(`Added ${successCount} photo(s)`);
     }
-    if (failed > 0) {
+    if (failCount > 0) {
       const detail = lastUploadError ? ` (${lastUploadError})` : '';
-      toast.error(`${failed} photo(s) failed to upload${detail}. Check Vercel Function logs for details, or verify your Vercel Blob store is connected.`);
-    }
-    if (newOnes.length === 0 && failed === 0) {
-      toast.error('No valid photos were uploaded.');
+      toast.error(`${failCount} photo(s) failed to upload${detail}. Check Vercel Function logs or verify your Blob store connection.`);
     }
   };
 
@@ -221,11 +235,28 @@ export default function HeadshotStudio() {
               <div className="text-lg font-medium">1. Upload 4-6 photos of yourself</div>
               <div className="text-sm text-zinc-400">Different angles, lighting, and expressions give the best consistent composite result.</div>
             </div>
-            <label className="cursor-pointer flex items-center gap-2 px-5 py-2 bg-white text-black rounded-2xl text-sm font-medium hover:bg-zinc-200 active:bg-white">
-              <Upload className="w-4 h-4" /> Add Photos
-              <input type="file" multiple accept="image/*" className="hidden" onChange={(e) => handleFiles(e.target.files)} />
+            <label className={`flex items-center gap-2 px-5 py-2 bg-white text-black rounded-2xl text-sm font-medium ${isUploading ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover:bg-zinc-200 active:bg-white'}`}>
+              <Upload className="w-4 h-4" /> {isUploading ? 'Uploading...' : 'Add Photos'}
+              <input 
+                type="file" 
+                multiple 
+                accept="image/*" 
+                className="hidden" 
+                disabled={isUploading}
+                onChange={(e) => handleFiles(e.target.files)} 
+              />
             </label>
           </div>
+
+          {isUploading && (
+            <div className="mb-4 p-3 bg-blue-950/40 border border-blue-900 rounded-2xl text-sm text-blue-400 flex items-center gap-3">
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-400 border-t-transparent" />
+              <span>
+                Uploading photos to server... {uploadProgress.current} of {uploadProgress.total}
+                <span className="text-blue-300"> — this can take 30–90 seconds for 6 photos</span>
+              </span>
+            </div>
+          )}
 
           {sources.length > 0 && (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 mb-4">
@@ -259,7 +290,7 @@ export default function HeadshotStudio() {
 
           <button
             onClick={buildSubject}
-            disabled={sources.length < 2}
+            disabled={sources.length < 2 || isUploading}
             className="px-6 py-2.5 bg-emerald-500 hover:bg-emerald-600 disabled:bg-zinc-700 rounded-2xl text-sm font-medium"
           >
             Create consistent rendition of the subject from these photos (recommended: 4-6 photos)
@@ -284,7 +315,7 @@ export default function HeadshotStudio() {
                     <button
                       key={bg.id}
                       onClick={() => generateVariation(cat, bg)}
-                      disabled={isGenerating || !subjectReady || !consent}
+                      disabled={isGenerating || !subjectReady || !consent || isUploading}
                       className="text-left text-sm border border-zinc-700 hover:border-zinc-500 rounded-xl px-3 py-2 disabled:opacity-50 hover:bg-zinc-800"
                     >
                       <div className="font-medium">Generate {bg.label}</div>

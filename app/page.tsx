@@ -121,7 +121,7 @@ export default function HeadshotStudio() {
     }
     if (failCount > 0) {
       const detail = lastUploadError ? ` (${lastUploadError})` : '';
-      toast.error(`${failCount} photo(s) failed to upload${detail}. Check Vercel Function logs or verify your Blob store connection.`);
+      toast.error(`${failCount} photo(s) failed to upload${detail}. Please try uploading again.`);
     }
   };
 
@@ -565,9 +565,9 @@ export default function HeadshotStudio() {
           {isGenerating && (
             <div className="mt-2 text-blue-400 text-sm flex items-center gap-2">
               <span className="animate-pulse">●</span> 
-              Preparing / generating your headshots with Grok Imagine...
+              Generating your professional headshots...
               {generatedResults.length > 0 && ` (${generatedResults.length} complete so far)`}
-              <span className="text-xs text-blue-300 ml-2">(can take several minutes for a full set – please be patient, images will appear as they finish)</span>
+              <span className="text-xs text-blue-300 ml-2">(this can take a few minutes — images will appear as they finish)</span>
             </div>
           )}
         </section>
@@ -577,8 +577,7 @@ export default function HeadshotStudio() {
           <div className="mb-4 flex items-center justify-between">
             <div>
               <div className="text-lg font-medium">2. Generate variations — different clothes &amp; backgrounds</div>
-              <div className="text-sm text-zinc-400">The app changes clothing, pose, and background per the professional style while keeping your face consistent. Powered by Grok Imagine (up to 3 of your photos used as direct visual references per generation for identity lock; the prompt references all of them).</div>
-              <div className="text-[10px] text-amber-400 mt-1">Tip: If you see "Fetching image failed 404", re-upload your source photos after the Blob store is connected in Vercel.</div>
+              <div className="text-sm text-zinc-400">The app changes clothing, pose, and background per the professional style while keeping your face consistent using your photos as strong visual references.</div>
             </div>
             <button
               onClick={generateAllVariations}
@@ -599,8 +598,8 @@ export default function HeadshotStudio() {
 
           {needsReupload && (
             <div className="mb-4 p-4 bg-red-950/40 border border-red-800 rounded-2xl text-sm text-red-400">
-              <strong>Reference photos not accessible to the image generator (causing 404s).</strong><br />
-              Please re-upload your source photos above (make sure the "headshot-photos" Blob store is connected in Vercel with the read-write token), then click the Retry button.
+              <strong>Some source photos couldn't be used for generation.</strong><br />
+              Please re-upload your photos above, then use the Retry button for the ones that failed.
               <button onClick={() => setNeedsReupload(false)} className="ml-2 text-xs underline">Dismiss</button>
             </div>
           )}
@@ -638,7 +637,7 @@ export default function HeadshotStudio() {
 
           {isGenerating && (
             <div className="mt-3 text-sm text-blue-400 flex items-center gap-2">
-              <span className="animate-pulse">●</span> Generating with Grok Imagine...
+              <span className="animate-pulse">●</span> Generating your headshots...
               {generatedResults.length > 0 && ` (${generatedResults.length} so far)`}
             </div>
           )}

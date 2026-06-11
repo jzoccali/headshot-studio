@@ -148,6 +148,7 @@ export default function HeadshotStudio() {
       return;
     }
     setIsBuildingSubject(true);
+    setSubjectReady(false);  // ensure checkmark doesn't show until build completes
 
     const validRefs = referenceUrls.filter((r): r is string => typeof r === 'string' && r.startsWith('http'));
     if (validRefs.length === 0) {

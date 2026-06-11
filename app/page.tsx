@@ -141,13 +141,20 @@ export default function HeadshotStudio() {
       return;
     }
 
+    // Client-side sanitization too (in case old polluted state from before the upload fix)
+    const validRefs = referenceUrls.filter((r): r is string => typeof r === 'string' && r.startsWith('http'));
+    if (validRefs.length === 0) {
+      toast.error("No valid reference photos. Please re-upload your source images and try again.");
+      return;
+    }
+
     setIsGenerating(true);
     try {
       const res = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          references: referenceUrls,
+          references: validRefs,
           categoryId: cat.id,
           backgroundId: bg.id,
           label: `${cat.name} - ${bg.label}`,

@@ -54,6 +54,7 @@ export default function HeadshotStudio() {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0 });
   const [failedVariations, setFailedVariations] = useState<Array<{categoryId: string, backgroundId: string, label: string}>>([]);
+  const [needsReupload, setNeedsReupload] = useState(false);
   const [isBuildingSubject, setIsBuildingSubject] = useState(false);
 
   const handleFiles = async (files: FileList | null) => {
@@ -279,6 +280,9 @@ export default function HeadshotStudio() {
               } else {
                 currentFailed.push({categoryId: cat.id, backgroundId: bg.id, label});
                 toast.error(`Failed ${label}: ${err.message}`);
+                if (err.message && (err.message.includes("Fetching image failed") || err.message.includes("source photos is no longer accessible") || err.message.includes("404"))) {
+                  setNeedsReupload(true);
+                }
               }
             }
           }
@@ -344,6 +348,9 @@ export default function HeadshotStudio() {
             if (attempt === 2) {
               stillFailed.push(item);
               toast.error(`Retry failed ${label}: ${err.message}`);
+              if (err.message && (err.message.includes("Fetching image failed") || err.message.includes("source photos is no longer accessible") || err.message.includes("404"))) {
+                setNeedsReupload(true);
+              }
             }
             await new Promise(r => setTimeout(r, 1000 * Math.pow(1.5, attempt)));
           }
@@ -494,15 +501,34 @@ export default function HeadshotStudio() {
           )}
 
           {sources.length > 0 && (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 mb-4">
-              {sources.map(s => (
-                <div key={s.id} className="relative rounded-2xl overflow-hidden border border-zinc-800 bg-zinc-900">
-                  <img src={s.previewUrl} className="w-full aspect-square object-cover" alt={s.name} />
-                  <div className="p-2 text-[10px] truncate bg-black/60">{s.name}</div>
-                  <button onClick={() => removeSource(s.id)} className="absolute top-2 right-2 bg-black/70 p-1 rounded-full"><X className="w-3 h-3" /></button>
-                </div>
-              ))}
-            </div>
+            <>
+              <div className="flex justify-between items-center mb-1">
+                <div className="text-xs text-zinc-400">Your source photos (used as references)</div>
+                <button
+                  onClick={() => {
+                    sources.forEach(s => URL.revokeObjectURL(s.previewUrl));
+                    setSources([]);
+                    setReferenceUrls([]);
+                    setSubjectReady(false);
+                    setNeedsReupload(false);
+                    setFailedVariations([]);
+                    toast.info("Sources cleared. Re-upload your photos.");
+                  }}
+                  className="text-xs text-red-400 hover:text-red-300"
+                >
+                  Clear all sources & re-upload
+                </button>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 mb-4">
+                {sources.map(s => (
+                  <div key={s.id} className="relative rounded-2xl overflow-hidden border border-zinc-800 bg-zinc-900">
+                    <img src={s.previewUrl} className="w-full aspect-square object-cover" alt={s.name} />
+                    <div className="p-2 text-[10px] truncate bg-black/60">{s.name}</div>
+                    <button onClick={() => removeSource(s.id)} className="absolute top-2 right-2 bg-black/70 p-1 rounded-full"><X className="w-3 h-3" /></button>
+                  </div>
+                ))}
+              </div>
+            </>
           )}
 
           <div className="mb-4 p-4 border border-amber-600 bg-amber-950/30 rounded-2xl text-sm">
@@ -570,6 +596,14 @@ export default function HeadshotStudio() {
               </button>
             )}
           </div>
+
+          {needsReupload && (
+            <div className="mb-4 p-4 bg-red-950/40 border border-red-800 rounded-2xl text-sm text-red-400">
+              <strong>Reference photos not accessible to the image generator (causing 404s).</strong><br />
+              Please re-upload your source photos above (make sure the "headshot-photos" Blob store is connected in Vercel with the read-write token), then click the Retry button.
+              <button onClick={() => setNeedsReupload(false)} className="ml-2 text-xs underline">Dismiss</button>
+            </div>
+          )}
 
           <div className="grid md:grid-cols-2 gap-4">
             {CATEGORIES.map(cat => (

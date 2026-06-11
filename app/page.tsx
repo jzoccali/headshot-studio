@@ -552,6 +552,7 @@ export default function HeadshotStudio() {
             <div>
               <div className="text-lg font-medium">2. Generate variations — different clothes &amp; backgrounds</div>
               <div className="text-sm text-zinc-400">The app changes clothing, pose, and background per the professional style while keeping your face consistent. Powered by Grok Imagine (up to 3 of your photos used as direct visual references per generation for identity lock; the prompt references all of them).</div>
+              <div className="text-[10px] text-amber-400 mt-1">Tip: If you see "Fetching image failed 404", re-upload your source photos after the Blob store is connected in Vercel.</div>
             </div>
             <button
               onClick={generateAllVariations}

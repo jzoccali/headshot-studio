@@ -74,12 +74,23 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
 
-    // Pass up to 3 of the uploaded photos as direct visual references to the Grok Imagine edit model.
-    // Use the public Blob URLs directly. These should be stable and publicly fetchable.
-    // This gives strong "composite" identity lock (exact facial structure + features) while the prompt
-    // controls clothing, expression, pose, lighting, and background. (Upload 4-6 varied photos for best results;
-    // the prompt text still references "all" conceptually; pixel refs are capped at the API's current multi-edit limit.)
     const refUrls = validReferences.slice(0, 3);
+
+    // Pre-validate references so we can give a clear, actionable error instead of a cryptic xAI 404.
+    // If any reference 404s, it almost always means the photos were uploaded to a previous/deleted Blob store
+    // before the current "headshot-photos" store + token was properly connected.
+    for (const refUrl of refUrls) {
+      try {
+        const head = await fetch(refUrl, { method: 'HEAD' });
+        if (!head.ok) {
+          return NextResponse.json({ 
+            error: `One of your source photos is no longer accessible (HTTP ${head.status}). This usually means the photos were uploaded before the correct Blob store was connected in the Vercel dashboard. Please re-upload your original photos now (after confirming the "headshot-photos" store is connected with the read-write token), then try generating again.` 
+          }, { status: 400 });
+        }
+      } catch (e) {
+        // Network issue or other — let xAI try, or surface later
+      }
+    }
 
     const model = 'grok-imagine-image-quality';
 

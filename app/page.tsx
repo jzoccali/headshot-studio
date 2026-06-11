@@ -58,6 +58,8 @@ export default function HeadshotStudio() {
     const newBlobUrls: string[] = [];
     let failed = 0;
 
+    let lastUploadError = '';
+
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       if (!file.type.startsWith('image/')) continue;
@@ -69,12 +71,14 @@ export default function HeadshotStudio() {
         const uploadRes = await fetch('/api/upload', { method: 'POST', body: formData });
         if (!uploadRes.ok) {
           const errData = await uploadRes.json().catch(() => ({}));
-          console.error('Upload failed', errData);
+          console.error('Upload failed for', file.name, errData);
+          lastUploadError = errData.error || `HTTP ${uploadRes.status}`;
           failed++;
           continue;
         }
         const data = await uploadRes.json();
         if (!data.url || typeof data.url !== 'string') {
+          lastUploadError = 'Invalid response from server';
           failed++;
           continue;
         }
@@ -82,8 +86,9 @@ export default function HeadshotStudio() {
         const id = `src-${Date.now()}-${i}`;
         newOnes.push({ id, name: file.name, previewUrl: URL.createObjectURL(file) });
         newBlobUrls.push(data.url);
-      } catch (e) {
+      } catch (e: any) {
         console.error('Upload error for', file.name, e);
+        lastUploadError = e.message || 'Network error';
         failed++;
       }
     }
@@ -95,7 +100,8 @@ export default function HeadshotStudio() {
       toast.success(`Added ${newOnes.length} photo(s)`);
     }
     if (failed > 0) {
-      toast.error(`${failed} photo(s) failed to upload. Check your connection or try again.`);
+      const detail = lastUploadError ? ` (${lastUploadError})` : '';
+      toast.error(`${failed} photo(s) failed to upload${detail}. Check Vercel Function logs for details, or verify your Vercel Blob store is connected.`);
     }
     if (newOnes.length === 0 && failed === 0) {
       toast.error('No valid photos were uploaded.');

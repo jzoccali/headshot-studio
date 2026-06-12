@@ -12,29 +12,50 @@ import { NextResponse } from 'next/server';
 
 const IDENTITY_PREAMBLE = `Using all the provided reference photos as strong visual references to maintain the exact facial structure, identity, and key features of the subject consistently across variations. Edit this image. I need a high-resolution, professional headshot, maintaining the exact facial structure, identity, and key features of the person in the input image. CRITICAL — preserve the subject's true age and real skin exactly as shown in the reference photos: keep every natural smile line, crow's feet, forehead crease, under-eye texture, neck texture, pore, and slight facial asymmetry. Do NOT smooth, retouch, airbrush, de-age, slim, or beautify the face in any way — this person earned every line and the photo must look honestly like them, not like a wax figure or a heavily filtered portrait. The subject is framed from the chest up, with ample headroom and negative space above their head, ensuring the top of their head is not cropped. The camera is at the subject's eye level, creating a direct, equal, engaging connection with the viewer.`;
 
-const FINISH = `Captured on an 85mm f/1.8 lens with a shallow depth of field, sharp focus on the eyes, and natural background bokeh. Documentary-grade realism: this must look like a minimally retouched RAW frame straight from a professional photographer's camera — real skin with visible pores, fine lines, natural color unevenness and subsurface warmth; individual gray and white hairs rendered faithfully; absolutely no airbrushed smoothing, no plastic sheen, no porcelain skin, no uniform digital-painting flatness. Rich but honest color grade: confident contrast, deep tones, luminous natural highlights — never faded or washed out, and never artificially perfected. Crisp micro-contrast in skin, hair, and fabric. The result should be indistinguishable from a real photograph of this real person taken at a premium 2026 personal-brand shoot.`;
+const FINISH = `Shot on a full-frame mirrorless camera with an 85mm f/1.8 lens: shallow depth of field, tack-sharp focus on the eyes, natural optical bokeh. TRUE PHOTOGRAPHIC REALISM, not an illustration: a barely-perceptible layer of fine photographic grain across the frame; slightly imperfect, asymmetric real-world lighting (real light is never perfectly even); authentic candid energy as if captured between posed frames. Real skin with visible pores, fine lines, natural color unevenness, faint redness where real skin has it, and subsurface warmth; individual gray and white hairs rendered faithfully; fabric with true weave texture and natural wrinkles where the body bends. Absolutely no airbrushed smoothing, no plastic sheen, no porcelain skin, no uniform digital-painting flatness, no CGI render quality. Honest color grade: confident contrast, deep tones, luminous natural highlights — never faded, never artificially perfected. The result must be indistinguishable from a frame a real photographer actually took of this real person.`;
 
-// Per-category STYLE: modern wardrobe, pose, expression, mood. No lighting here (the scene owns it).
-const CATEGORY_STYLES: Record<string, string> = {
-  'venture-capitalist': `The person looks directly at the camera with a confident, composed expression and the faint beginning of a knowing smile. The subject's body is positioned at a relaxed 3/4 angle with strong, easy posture. They are styled in a 2026 executive look: an impeccably tailored midnight-navy Italian wool suit with a crisp white dress shirt, open collar, no tie — modern power dressing, sharp and current. The atmosphere exudes presence, decisiveness, and quiet authority.`,
+// 16 UNIQUE LOOKS — every single photo gets its own complete outfit + environment + lighting,
+// from boardroom suit-and-tie to weekend sailing. Keyed by look id (sent as backgroundId by the
+// frontend; categoryId identifies the collection for labeling only). Plus a neutral 'master' look
+// used once to build the consistent identity reference.
+const LOOKS: Record<string, string> = {
+  master: `The person has a natural, relaxed expression with a slight easy smile, facing the camera directly. They wear a simple dark-charcoal crewneck sweater. The setting is a neutral mid-gray seamless studio backdrop. Lighting is soft, even, and balanced — a clean identity portrait with clear detail across the whole face.`,
 
-  'thought-leader': `The person looks directly at the camera with a warm, genuine, open smile that reaches the eyes. The subject faces the camera directly with relaxed, open posture. They are styled in a 2026 modern-authority look: a deep forest-green unstructured blazer in softly textured wool over a fine-gauge black merino crewneck — rich, contemporary, approachable. The atmosphere exudes warmth, credibility, and magnetic trustworthiness.`,
+  // ── Boardroom collection ──
+  'navy-suit-tie': `The person looks directly at the camera with confident, settled authority and a hint of a smile. They wear a classic tailored navy suit, crisp white spread-collar shirt, and a textured burgundy silk tie — the full traditional power look, impeccably knotted. The setting is a glass-walled executive conference room dissolved into cool bokeh — hints of a long table and city light beyond. Lighting is polished corporate daylight with soft directional modeling.`,
 
-  'digital-architect': `The person looks directly at the camera with an alert, slightly smiling, switched-on expression. The subject is naturally positioned with one shoulder subtly forward, relaxed and modern. They are styled in a 2026 founder look: a matte-black fine-merino mock-neck sweater with clean minimal lines — the uniform of someone building the future, sleek and intentional. The atmosphere exudes intelligence, momentum, and effortless modern confidence.`,
+  'skyline-no-tie': `The person looks directly at the camera, composed and quietly commanding, faint knowing smile. They wear an impeccably tailored charcoal suit with a crisp white shirt, open collar, no tie — modern executive. The setting is a high-rise corner office: floor-to-ceiling glass with the city skyline melted into elegant cool-blue bokeh. Lighting is crisp diffused daylight from the expansive windows.`,
 
-  'arts-administrator': `The person looks directly at the camera with a calm, focused, quietly magnetic expression. The subject is positioned at a subtle, elegant angle with poised posture. They are styled in a 2026 creative-director look: a sharply tailored all-black ensemble — structured black blazer over a black silk crew-neck top, with a single minimal brushed-silver accent. The atmosphere exudes taste, vision, and understated creative power.`,
-};
+  'black-editorial': `The person looks directly at the camera with calm, magnetic intensity. They wear a fine black turtleneck under a structured black blazer — sleek monochrome. The setting is a dark editorial studio: deep charcoal-to-black gradient with smoky falloff. Lighting is low-key and dramatic — a single large softbox sculpting the face, a fine silver rim light tracing the shoulders, velvety cinematic blacks.`,
 
-// Per-background SCENE: each backdrop brings its own environment AND lighting design.
-// IDs are unchanged so the frontend keeps working; the looks are completely new.
-const BACKGROUND_SCENES: Record<string, string> = {
-  dark: `The setting is a dark editorial studio: a deep charcoal-to-black gradient backdrop with subtle smoky falloff. Lighting is low-key and dramatic — a single large softbox key at 45 degrees sculpting the face with gentle shadow modeling, plus a fine silver rim light tracing the shoulders and hair to separate the subject from the darkness. Defined catchlights in the eyes. Deep, velvety blacks with cinematic depth.`,
+  'startup-office': `The person looks directly at the camera with an energized, approachable, slightly smiling expression, one shoulder relaxed forward. They wear a crisp white dress shirt with the sleeves casually rolled, no jacket, top button open — hands-on leadership. The setting is a bright modern startup office: glass, blond wood, and greenery in creamy bokeh. Lighting is airy natural daylight.`,
 
-  white: `The setting is a bright modern office: floor-to-ceiling glass partitions, warm wood and matte-white architectural details dissolved into soft creamy bokeh far behind the subject. Lighting is soft directional daylight pouring in from large windows to one side, gently modeling the face with airy, natural shadow and a clean bright catchlight. Fresh, energetic, expensive — the look of a flagship headquarters.`,
+  // ── Smart Casual collection ──
+  'coffee-shop': `The person looks at the camera mid-warm-laugh, candid and genuine. They wear a textured charcoal shawl-collar cardigan over a clean white tee. The setting is a specialty coffee shop: espresso machine, hanging pendant lights, and shelves of ceramics softened into warm amber bokeh. Lighting is honeyed window light from the side with cozy ambient warmth.`,
 
-  'warm-greige': `The setting is an exterior golden-hour scene: warm late-afternoon sunlight with softly blurred upscale architecture and hints of green foliage melting into amber bokeh. Lighting is golden-hour backlight catching the hair and shoulders like a halo, with a soft warm key filling the face naturally. Glowing, flattering, alive — the warmest light of the day.`,
+  'library-knit': `The person looks directly at the camera with thoughtful warmth and an easy smile. They wear a navy fine-knit polo, relaxed and intelligent. The setting is a handsome study: walls of books in rich wood shelving rendered as soft warm bokeh. Lighting is gentle lamplight mixed with soft daylight — the trusted-advisor look.`,
 
-  'cool-bluegray': `The setting is a high-rise office at the window: a floor-to-ceiling pane with a city skyline softened into elegant cool-blue bokeh behind the subject. Lighting is cool diffused daylight from the expansive glass, crisp and contemporary, with clean catchlights and gentle shadow depth. Polished, metropolitan, commanding — the corner-office view.`,
+  'rooftop-golden': `The person looks directly at the camera with a relaxed, sun-warmed smile. They wear an olive suede overshirt over a white henley — elevated casual. The setting is a rooftop terrace at golden hour: blurred skyline edges and string lights catching the low sun in amber bokeh. Lighting is golden-hour backlight haloing the hair with a soft warm fill on the face.`,
+
+  'creative-loft': `The person looks directly at the camera with a poised, intrigued half-smile. They wear an all-black relaxed crew-neck with one minimal silver accent — gallery-owner cool. The setting is a white-brick creative loft with large industrial windows and hints of framed art in pale bokeh. Lighting is broad soft north-facing daylight, clean and dimensional.`,
+
+  // ── Weekend collection ──
+  'sailing': `The person looks at the camera with a wind-blown, exhilarated grin, hair naturally tousled by the breeze. They wear a navy performance quarter-zip over a white tee, sleeves pushed up. The setting is the deck of a sailboat underway: rigging, white sail edges, and glittering open water in sun-sparkled bokeh. Lighting is brilliant midday marine sun with natural bounce off the water.`,
+
+  'beach-linen': `The person looks directly at the camera with an unhurried, warm vacation smile. They wear a relaxed white linen shirt, open collar, sleeves rolled. The setting is a quiet beach at golden hour: soft dunes, sea grass, and surf dissolved into peach-and-gold bokeh. Lighting is low warm sun kissing one side of the face with a gentle glow.`,
+
+  'field-jacket': `The person looks directly at the camera with a grounded, easy confidence. They wear a waxed-cotton field jacket over a heathered henley — weekend-outdoors classic. The setting is a tree-lined trail in late afternoon: layered green foliage in deep natural bokeh. Lighting is dappled sunlight filtering through leaves with a soft warm key on the face.`,
+
+  'cafe-patio': `The person looks at the camera with a relaxed, sociable smile, caught in a candid moment. They wear a light stone-colored merino polo. The setting is a European café patio: rattan chairs, marble table edges, and a sunlit street softened into bright pastel bokeh. Lighting is bright open-shade afternoon light, fresh and flattering.`,
+
+  // ── Bold & Editorial collection ──
+  'leather-moody': `The person looks directly at the camera with quiet edge and self-assurance. They wear a matte black leather jacket over a charcoal tee. The setting is a moody studio with a smoky slate-blue gradient backdrop. Lighting is hard-edged key light with deep sculpted shadows and a cool rim — confident editorial drama.`,
+
+  'evening-city': `The person looks directly at the camera, composed and cinematic, slight smile. They wear a charcoal wool topcoat over a black crewneck. The setting is a city street at blue hour: cool dusk sky with warm shop and traffic lights blooming into rich bokeh. Lighting is soft cool ambient dusk with warm practical accents catching the face.`,
+
+  'industrial-denim': `The person looks directly at the camera with an unforced, capable smile. They wear a dark indigo denim shirt, top button open — honest and strong. The setting is an industrial loft: weathered brick and steel-framed windows in muted bokeh. Lighting is raking window light with rich texture and warm-neutral tones.`,
+
+  'crimson-editorial': `The person looks directly at the camera with bold, magnetic presence. They wear a midnight-navy suit over a black crewneck, no tie — fashion-forward tailoring. The setting is a deep crimson-burgundy seamless studio backdrop with subtle gradient falloff. Lighting is dramatic directional key with a soft fill — a striking magazine-cover portrait.`,
 };
 
 export async function POST(request: Request) {
@@ -61,17 +82,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Missing category or background' }, { status: 400 });
     }
 
-    const style = CATEGORY_STYLES[categoryId];
-    if (!style) {
-      return NextResponse.json({ error: 'Invalid category' }, { status: 400 });
+    // backgroundId carries the look id; categoryId is the collection (labeling only).
+    const look = LOOKS[backgroundId];
+    if (!look) {
+      return NextResponse.json({ error: 'Invalid look' }, { status: 400 });
     }
 
-    const scene = BACKGROUND_SCENES[backgroundId];
-    if (!scene) {
-      return NextResponse.json({ error: 'Invalid background' }, { status: 400 });
-    }
-
-    const fullPrompt = `${IDENTITY_PREAMBLE} ${style} ${scene} ${FINISH}`;
+    const fullPrompt = `${IDENTITY_PREAMBLE} ${look} ${FINISH}`;
 
     // Sanitize: only keep real string URLs (frontend can send bad data on upload failures or removes).
     // xAI requires actual http(s) strings for image.url — null/undefined/empty will 422.

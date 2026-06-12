@@ -11,30 +11,58 @@ type SourcePhoto = {
   previewUrl: string;
 };
 
-type Category = {
-  id: string;
-  name: string;
-  description: string;
-};
-
-type Background = {
+type Look = {
   id: string;
   label: string;
   description: string;
 };
 
-const CATEGORIES: Category[] = [
-  { id: 'venture-capitalist', name: 'The Executive', description: 'Boardrooms, VC pitches, LinkedIn — midnight-navy suit, open collar, no tie. Modern power.' },
-  { id: 'thought-leader', name: 'The Thought Leader', description: 'Keynotes, consulting, coaching — forest-green blazer over black merino. Warm magnetic authority.' },
-  { id: 'digital-architect', name: 'The Founder', description: 'Tech, startups, builders — matte-black merino mock-neck. Sleek, switched-on, future-facing.' },
-  { id: 'arts-administrator', name: 'The Creative Director', description: 'Brand, design, culture — sharp all-black tailoring with a silver accent. Understated power.' },
-];
+type Category = {
+  id: string;
+  name: string;
+  description: string;
+  looks: Look[];
+};
 
-const BACKGROUNDS: Background[] = [
-  { id: 'dark', label: 'Dark Editorial Studio', description: 'Dramatic rim light, deep cinematic blacks' },
-  { id: 'white', label: 'Modern Office', description: 'Glass + daylight, creamy bokeh, flagship HQ' },
-  { id: 'warm-greige', label: 'Golden Hour', description: 'Warm sun halo, glowing exterior bokeh' },
-  { id: 'cool-bluegray', label: 'Skyline Window', description: 'City view in cool-blue bokeh, corner office' },
+// 16 unique looks — every photo has its own outfit AND its own setting.
+// Look ids map to the LOOKS table in /api/generate.
+const CATEGORIES: Category[] = [
+  {
+    id: 'boardroom', name: 'Boardroom', description: 'Four distinct executive looks — from full suit & tie to rolled sleeves at the startup HQ.',
+    looks: [
+      { id: 'navy-suit-tie', label: 'Navy Suit & Tie', description: 'Classic power — glass conference room' },
+      { id: 'skyline-no-tie', label: 'Charcoal, Skyline', description: 'Open collar — corner-office city view' },
+      { id: 'black-editorial', label: 'Black on Black', description: 'Turtleneck + blazer — dark studio drama' },
+      { id: 'startup-office', label: 'Rolled Sleeves', description: 'White shirt, no jacket — bright startup HQ' },
+    ],
+  },
+  {
+    id: 'smart-casual', name: 'Smart Casual', description: 'Approachable but sharp — coffee shop, library, rooftop, creative loft.',
+    looks: [
+      { id: 'coffee-shop', label: 'Coffee Shop', description: 'Shawl cardigan — warm café bokeh' },
+      { id: 'library-knit', label: 'Library', description: 'Knit polo — book-lined study' },
+      { id: 'rooftop-golden', label: 'Rooftop Golden Hour', description: 'Suede overshirt — sunset terrace' },
+      { id: 'creative-loft', label: 'Creative Loft', description: 'All-black casual — white-brick studio' },
+    ],
+  },
+  {
+    id: 'weekend', name: 'Weekend', description: 'The life shots — sailing, beach, trail, café patio.',
+    looks: [
+      { id: 'sailing', label: 'Sailing', description: 'Quarter-zip on deck — sun-sparkled water' },
+      { id: 'beach-linen', label: 'Beach Linen', description: 'White linen — golden-hour surf' },
+      { id: 'field-jacket', label: 'On the Trail', description: 'Field jacket — dappled forest light' },
+      { id: 'cafe-patio', label: 'Café Patio', description: 'Merino polo — sunlit European street' },
+    ],
+  },
+  {
+    id: 'editorial', name: 'Bold & Editorial', description: 'Magazine energy — leather, blue hour, denim, crimson backdrop.',
+    looks: [
+      { id: 'leather-moody', label: 'Leather, Moody', description: 'Black leather — sculpted studio shadows' },
+      { id: 'evening-city', label: 'Evening City', description: 'Wool topcoat — blue-hour street lights' },
+      { id: 'industrial-denim', label: 'Industrial Denim', description: 'Indigo shirt — brick & steel loft' },
+      { id: 'crimson-editorial', label: 'Crimson Editorial', description: 'Navy tailoring — deep red backdrop' },
+    ],
+  },
 ];
 
 type GeneratedResult = {
@@ -209,8 +237,8 @@ export default function HeadshotStudio() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           references: validRefs,
-          categoryId: 'venture-capitalist', // neutral starting style for the master; clothing overridden in variations
-          backgroundId: 'dark',
+          categoryId: 'master',
+          backgroundId: 'master', // dedicated neutral identity-anchor look
           label: 'Master Reference',
         }),
       });
@@ -230,7 +258,7 @@ export default function HeadshotStudio() {
     }
   };
 
-  const generateVariation = async (cat: Category, bg: Background) => {
+  const generateVariation = async (cat: Category, bg: Look) => {
     if (!subjectReady) {
       toast.error("Upload photos and build the subject first");
       return;
@@ -307,12 +335,12 @@ export default function HeadshotStudio() {
     setIsGenerating(true);
     setFailedVariations([]);
     let generatedThisRun = 0;
-    const total = CATEGORIES.length * BACKGROUNDS.length;
+    const total = CATEGORIES.reduce((n, c) => n + c.looks.length, 0);
     const currentFailed: Array<{categoryId: string, backgroundId: string, label: string}> = [];
 
     try {
       for (const cat of CATEGORIES) {
-        for (const bg of BACKGROUNDS) {
+        for (const bg of cat.looks) {
           const label = `${cat.name} - ${bg.label}`;
 
           // Skip if we already have this exact variation from a previous run
@@ -394,7 +422,7 @@ export default function HeadshotStudio() {
     try {
       for (const item of toRetry) {
         const cat = CATEGORIES.find(c => c.id === item.categoryId)!;
-        const bg = BACKGROUNDS.find(b => b.id === item.backgroundId)!;
+        const bg = cat.looks.find(b => b.id === item.backgroundId)!;
         const label = item.label;
 
         if (generatedResults.some(r => r.label === label)) continue;
@@ -473,7 +501,7 @@ export default function HeadshotStudio() {
     let generatedThisRun = 0;
 
     try {
-      for (const bg of BACKGROUNDS) {
+      for (const bg of cat.looks) {
         const label = `${cat.name} - ${bg.label}`;
 
         if (generatedResults.some(r => r.label === label)) continue;
@@ -514,7 +542,7 @@ export default function HeadshotStudio() {
           }
         }
 
-        if (generatedThisRun < BACKGROUNDS.length) {
+        if (generatedThisRun < cat.looks.length) {
           await new Promise(resolve => setTimeout(resolve, 2000));
         }
       }
@@ -716,7 +744,7 @@ export default function HeadshotStudio() {
                 </div>
                 <div className="text-xs text-zinc-400 mb-3">{cat.description}</div>
                 <div className="grid grid-cols-2 gap-2">
-                  {BACKGROUNDS.map(bg => (
+                  {cat.looks.map(bg => (
                     <button
                       key={bg.id}
                       onClick={() => generateVariation(cat, bg)}

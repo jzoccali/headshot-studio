@@ -86,7 +86,8 @@ export default function HeadshotStudio() {
   const [masterReferenceUrl, setMasterReferenceUrl] = useState<string | null>(null);
   const [isBuildingSubject, setIsBuildingSubject] = useState(false);
   const [hydrated, setHydrated] = useState(false);
-  const [engine, setEngine] = useState<'xai' | 'openai'>('xai');
+  // GPT won the A/B (sharper, more realistic) — it's the default; Grok stays as fallback.
+  const [engine, setEngine] = useState<'xai' | 'openai'>('openai');
 
   // Restore the session from localStorage so navigating away (e.g. opening an image)
   // or reloading doesn't wipe the gallery — losing 15 images forced costly regenerations.
@@ -337,72 +338,85 @@ export default function HeadshotStudio() {
     setIsGenerating(true);
     setFailedVariations([]);
     let generatedThisRun = 0;
-    const total = CATEGORIES.reduce((n, c) => n + c.looks.length, 0);
     const currentFailed: Array<{categoryId: string, backgroundId: string, label: string}> = [];
 
-    try {
-      for (const cat of CATEGORIES) {
-        for (const bg of cat.looks) {
-          const label = `${cat.name} - ${bg.label}${engine === 'openai' ? ' (GPT)' : ''}`;
+    // Build the work queue up front: skip variations we already have, respect the session cap.
+    const existing = new Set(generatedResults.map(r => r.label));
+    const queue: Array<{cat: Category, bg: Look, label: string}> = [];
+    for (const cat of CATEGORIES) {
+      for (const bg of cat.looks) {
+        const label = `${cat.name} - ${bg.label}${engine === 'openai' ? ' (GPT)' : ''}`;
+        if (!existing.has(label)) queue.push({ cat, bg, label });
+      }
+    }
+    const remainingSlots = Math.max(0, 24 - generatedResults.length);
+    if (queue.length > remainingSlots) {
+      toast.error(`Session limit is 24 images — generating the first ${remainingSlots}.`);
+      queue.length = remainingSlots;
+    }
 
-          // Skip if we already have this exact variation from a previous run
-          if (generatedResults.some(r => r.label === label)) {
-            continue;
-          }
+    // GPT renders take 60-120s each, so run 3 at a time (cuts a 16-batch from ~25min to ~8min).
+    // xAI stays sequential with a courtesy delay — its edits endpoint is rate-limit sensitive.
+    const concurrency = engine === 'openai' ? 3 : 1;
+    let next = 0;
 
-          if (generatedResults.length >= 24) {
-            toast.error("Session limit reached (24 images).");
-            break;
-          }
+    const generateOne = async (item: {cat: Category, bg: Look, label: string}) => {
+      const { cat, bg, label } = item;
+      let success = false;
+      for (let attempt = 0; attempt < 3 && !success; attempt++) {  // up to 2 retries
+        try {
+          const res = await fetch('/api/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              references: refsToUse,
+              categoryId: cat.id,
+              backgroundId: bg.id,
+              label,
+              engine,
+            }),
+          });
 
-          let success = false;
-          for (let attempt = 0; attempt < 3 && !success; attempt++) {  // up to 2 retries
-            try {
-              const res = await fetch('/api/generate', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  references: refsToUse,
-                  categoryId: cat.id,
-                  backgroundId: bg.id,
-                  label,
-                  engine,
-                }),
-              });
+          const data = await res.json();
+          if (data.error) throw new Error(data.error);
 
-              const data = await res.json();
-              if (data.error) throw new Error(data.error);
+          setGeneratedResults(prev => [...prev, {
+            imageUrl: data.imageUrl,
+            label: data.label || label,
+            categoryName: cat.name,
+            backgroundLabel: bg.label,
+          }]);
 
-              setGeneratedResults(prev => [...prev, {
-                imageUrl: data.imageUrl,
-                label: data.label || label,
-                categoryName: cat.name,
-                backgroundLabel: bg.label,
-              }]);
-
-              generatedThisRun++;
-              success = true;
-            } catch (err: any) {
-              console.error(`Failed to generate ${label} (attempt ${attempt + 1})`, err);
-              const delay = 1000 * Math.pow(1.5, attempt);  // exponential backoff
-              if (attempt < 2) {
-                await new Promise(r => setTimeout(r, delay));
-              } else {
-                currentFailed.push({categoryId: cat.id, backgroundId: bg.id, label});
-                toast.error(`Failed ${label}: ${err.message}`);
-                if (err.message && (err.message.includes("Fetching image failed") || err.message.includes("source photos is no longer accessible") || err.message.includes("404"))) {
-                  setNeedsReupload(true);
-                }
-              }
+          generatedThisRun++;
+          success = true;
+        } catch (err: any) {
+          console.error(`Failed to generate ${label} (attempt ${attempt + 1})`, err);
+          if (attempt < 2) {
+            await new Promise(r => setTimeout(r, 1000 * Math.pow(1.5, attempt)));  // exponential backoff
+          } else {
+            currentFailed.push({categoryId: cat.id, backgroundId: bg.id, label});
+            toast.error(`Failed ${label}: ${err.message}`);
+            if (err.message && (err.message.includes("Fetching image failed") || err.message.includes("source photos is no longer accessible") || err.message.includes("404"))) {
+              setNeedsReupload(true);
             }
-          }
-
-          // Rate-limit friendly delay (xAI image edits can be sensitive)
-          if (generatedThisRun < total) {
-            await new Promise(resolve => setTimeout(resolve, 2000));
           }
         }
       }
+    };
+
+    const worker = async () => {
+      while (next < queue.length) {
+        const item = queue[next++];
+        await generateOne(item);
+        if (engine !== 'openai' && next < queue.length) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      }
+    };
+
+    try {
+      await Promise.all(Array.from({ length: Math.min(concurrency, queue.length) }, () => worker()));
+
       if (currentFailed.length > 0) {
         setFailedVariations(currentFailed);
         toast.error(`Generated ${generatedThisRun} new variations. ${currentFailed.length} failed – use Retry button below.`);

@@ -86,6 +86,7 @@ export default function HeadshotStudio() {
   const [masterReferenceUrl, setMasterReferenceUrl] = useState<string | null>(null);
   const [isBuildingSubject, setIsBuildingSubject] = useState(false);
   const [hydrated, setHydrated] = useState(false);
+  const [engine, setEngine] = useState<'xai' | 'openai'>('xai');
 
   // Restore the session from localStorage so navigating away (e.g. opening an image)
   // or reloading doesn't wipe the gallery — losing 15 images forced costly regenerations.
@@ -290,7 +291,8 @@ export default function HeadshotStudio() {
           references: refsToUse,
           categoryId: cat.id,
           backgroundId: bg.id,
-          label: `${cat.name} - ${bg.label}`,
+          label: `${cat.name} - ${bg.label}${engine === 'openai' ? ' (GPT)' : ''}`,
+          engine,
         }),
       });
 
@@ -341,7 +343,7 @@ export default function HeadshotStudio() {
     try {
       for (const cat of CATEGORIES) {
         for (const bg of cat.looks) {
-          const label = `${cat.name} - ${bg.label}`;
+          const label = `${cat.name} - ${bg.label}${engine === 'openai' ? ' (GPT)' : ''}`;
 
           // Skip if we already have this exact variation from a previous run
           if (generatedResults.some(r => r.label === label)) {
@@ -364,6 +366,7 @@ export default function HeadshotStudio() {
                   categoryId: cat.id,
                   backgroundId: bg.id,
                   label,
+                  engine,
                 }),
               });
 
@@ -440,6 +443,7 @@ export default function HeadshotStudio() {
                 categoryId: cat.id,
                 backgroundId: bg.id,
                 label,
+                engine,
               }),
             });
             const data = await res.json();
@@ -502,7 +506,7 @@ export default function HeadshotStudio() {
 
     try {
       for (const bg of cat.looks) {
-        const label = `${cat.name} - ${bg.label}`;
+        const label = `${cat.name} - ${bg.label}${engine === 'openai' ? ' (GPT)' : ''}`;
 
         if (generatedResults.some(r => r.label === label)) continue;
         if (generatedResults.length >= 24) break;
@@ -518,6 +522,7 @@ export default function HeadshotStudio() {
                 categoryId: cat.id,
                 backgroundId: bg.id,
                 label,
+                engine,
               }),
             });
 
@@ -704,13 +709,29 @@ export default function HeadshotStudio() {
               <div className="text-lg font-medium">2. Generate variations — different clothes &amp; backgrounds</div>
               <div className="text-sm text-zinc-400">The app changes clothing, pose, and background per the professional style while keeping your face consistent using your photos as strong visual references.</div>
             </div>
-            <button
-              onClick={generateAllVariations}
-              disabled={isGenerating || !subjectReady || !consent}
-              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-zinc-700 rounded-2xl text-sm font-medium whitespace-nowrap"
-            >
-              Generate All 16 Variations
-            </button>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center rounded-2xl border border-zinc-700 p-0.5 text-xs" title="A/B test: same prompts, different image engine">
+                <button
+                  onClick={() => setEngine('xai')}
+                  className={`px-3 py-1.5 rounded-xl font-medium ${engine === 'xai' ? 'bg-zinc-200 text-black' : 'text-zinc-400 hover:text-zinc-200'}`}
+                >
+                  Grok
+                </button>
+                <button
+                  onClick={() => setEngine('openai')}
+                  className={`px-3 py-1.5 rounded-xl font-medium ${engine === 'openai' ? 'bg-zinc-200 text-black' : 'text-zinc-400 hover:text-zinc-200'}`}
+                >
+                  GPT
+                </button>
+              </div>
+              <button
+                onClick={generateAllVariations}
+                disabled={isGenerating || !subjectReady || !consent}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-zinc-700 rounded-2xl text-sm font-medium whitespace-nowrap"
+              >
+                Generate All 16 Variations
+              </button>
+            </div>
             {failedVariations.length > 0 && !isGenerating && (
               <button
                 onClick={retryFailedVariations}

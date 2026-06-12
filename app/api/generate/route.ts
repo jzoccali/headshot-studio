@@ -60,20 +60,26 @@ const LOOKS: Record<string, string> = {
 
 export async function POST(request: Request) {
   try {
-    if (!process.env.XAI_API_KEY) {
-      console.error('XAI_API_KEY is not set in environment');
-      return NextResponse.json({ 
-        error: 'XAI_API_KEY is not configured. Add XAI_API_KEY in Vercel environment variables (and .env.local for local dev) and redeploy. [xai-v3b3dbd8]' 
-      }, { status: 500 });
-    }
-
     const body = await request.json();
-    const { references, categoryId, backgroundId, label } = body as {
+    const { references, categoryId, backgroundId, label, engine = 'xai' } = body as {
       references: string[];
       categoryId: string;
       backgroundId: string;
       label?: string;
+      engine?: 'xai' | 'openai';
     };
+
+    if (engine === 'openai' && !process.env.OPENAI_API_KEY) {
+      return NextResponse.json({
+        error: 'OPENAI_API_KEY is not configured. Add it in Vercel environment variables and redeploy to use the GPT engine.'
+      }, { status: 500 });
+    }
+    if (engine !== 'openai' && !process.env.XAI_API_KEY) {
+      console.error('XAI_API_KEY is not set in environment');
+      return NextResponse.json({
+        error: 'XAI_API_KEY is not configured. Add XAI_API_KEY in Vercel environment variables (and .env.local for local dev) and redeploy. [xai-v3b3dbd8]'
+      }, { status: 500 });
+    }
 
     if (!references || references.length === 0) {
       return NextResponse.json({ error: 'No reference images provided' }, { status: 400 });
@@ -109,6 +115,7 @@ export async function POST(request: Request) {
     // when the Blob store the photos live in is not the currently connected one, or transient access issues).
     // If any reference is bad, we give a clear message telling the user to re-upload after the correct store is connected.
     const referenceImages: string[] = [];
+    const referenceBuffers: ArrayBuffer[] = [];
     for (const refUrl of refUrls) {
       try {
         const head = await fetch(refUrl, { method: 'HEAD' });
@@ -125,6 +132,7 @@ export async function POST(request: Request) {
           }, { status: 400 });
         }
         const arrayBuffer = await imgRes.arrayBuffer();
+        referenceBuffers.push(arrayBuffer);
         const base64 = Buffer.from(arrayBuffer).toString('base64');
         referenceImages.push(`data:image/jpeg;base64,${base64}`);
       } catch (e) {
@@ -132,6 +140,44 @@ export async function POST(request: Request) {
           error: 'Failed to process one of your source photos. Please re-upload your original photos and try again.' 
         }, { status: 400 });
       }
+    }
+
+    // ── GPT engine (OpenAI gpt-image-1.5) — A/B alternative to xAI ──
+    // input_fidelity 'high' tells the model to stay faithful to the reference faces.
+    if (engine === 'openai') {
+      const form = new FormData();
+      form.append('model', 'gpt-image-1.5');
+      form.append('prompt', fullPrompt);
+      form.append('size', '1024x1024');
+      form.append('quality', 'high');
+      form.append('input_fidelity', 'high');
+      referenceBuffers.forEach((buf, i) => {
+        form.append('image[]', new Blob([buf], { type: 'image/jpeg' }), `reference-${i}.jpg`);
+      });
+
+      const oaRes = await fetch('https://api.openai.com/v1/images/edits', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${process.env.OPENAI_API_KEY}` },
+        body: form,
+      });
+
+      if (!oaRes.ok) {
+        const errText = await oaRes.text().catch(() => '');
+        throw new Error(`OpenAI edit failed (${oaRes.status}): ${errText.slice(0, 300)}`);
+      }
+
+      const oaJson = await oaRes.json();
+      const b64 = oaJson?.data?.[0]?.b64_json;
+      if (!b64) throw new Error('No image returned from OpenAI');
+
+      const oaBlob = new Blob([Buffer.from(b64, 'base64')], { type: 'image/jpeg' });
+      const oaFilename = `generated/${Date.now()}-${(label || `${categoryId}-${backgroundId}`).replace(/\s+/g, '-')}.jpg`;
+      const stored = await put(oaFilename, oaBlob, { access: 'public', contentType: 'image/jpeg' });
+
+      return NextResponse.json({
+        imageUrl: stored.url,
+        label: label || `${categoryId} - ${backgroundId}`,
+      });
     }
 
     const model = 'grok-imagine-image-quality';

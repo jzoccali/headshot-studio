@@ -145,14 +145,37 @@ export async function POST(request: Request) {
     // ── GPT engine (OpenAI gpt-image-1.5) — A/B alternative to xAI ──
     // input_fidelity 'high' tells the model to stay faithful to the reference faces.
     if (engine === 'openai') {
+      // OpenAI strictly validates reference files (rejects HEIC, CMYK, odd modes — formats
+      // xAI tolerates). Normalize every reference to a clean sRGB JPEG; skip any that can't
+      // be decoded rather than failing the whole generation.
+      const sharp = (await import('sharp')).default;
+      const normalized: Buffer[] = [];
+      for (const buf of referenceBuffers) {
+        try {
+          const jpeg = await sharp(Buffer.from(buf))
+            .rotate() // respect EXIF orientation
+            .flatten({ background: '#ffffff' }) // remove alpha
+            .jpeg({ quality: 95 })
+            .toBuffer();
+          normalized.push(jpeg);
+        } catch (e) {
+          console.warn('Skipping reference OpenAI cannot read (unsupported format):', e);
+        }
+      }
+      if (normalized.length === 0) {
+        return NextResponse.json({
+          error: 'None of your reference photos are in a format the GPT engine can read. Please re-upload as JPG or PNG.'
+        }, { status: 400 });
+      }
+
       const form = new FormData();
       form.append('model', 'gpt-image-1.5');
       form.append('prompt', fullPrompt);
       form.append('size', '1024x1024');
       form.append('quality', 'high');
       form.append('input_fidelity', 'high');
-      referenceBuffers.forEach((buf, i) => {
-        form.append('image[]', new Blob([buf], { type: 'image/jpeg' }), `reference-${i}.jpg`);
+      normalized.forEach((buf, i) => {
+        form.append('image[]', new Blob([new Uint8Array(buf)], { type: 'image/jpeg' }), `reference-${i}.jpg`);
       });
 
       const oaRes = await fetch('https://api.openai.com/v1/images/edits', {

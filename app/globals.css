@@ -1,0 +1,23 @@
+@import "tailwindcss";
+
+/* Consistent dark studio theme — matches the bg-zinc-950 / text-zinc-200 set in layout.tsx.
+   (The old create-next-app light/dark boilerplate + Arial font were fighting this and made
+   the colors look washed out / inconsistent.) */
+
+@theme inline {
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+html,
+body {
+  background-color: #09090b; /* zinc-950 */
+  color: #e4e4e7; /* zinc-200 */
+  font-family: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
+}
+
+/* Slightly nicer focus + selection colors for the emerald accent used on the buttons */
+::selection {
+  background-color: #10b981; /* emerald-500 */
+  color: #052e16;
+}

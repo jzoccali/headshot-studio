@@ -1,0 +1,37 @@
+# Build queue — headshot-studio task list.
+# The selector picks the next task whose preconditions are merged and lane is free.
+# merge: human  -> you review and merge manually
+# merge: auto   -> auto-merges on green CI
+#
+# Keep ids identical to the ## headings in build-loop/PROMPT_LIBRARY.md.
+
+tasks:
+  - id: UI-01
+    lane: frontend
+    branch: feat/ui-cleanup
+    preconditions: []
+    merge: human
+
+  - id: UI-02
+    lane: frontend
+    branch: feat/loading-states
+    preconditions: [UI-01]
+    merge: auto
+
+  - id: UI-03
+    lane: frontend
+    branch: feat/mobile-responsive
+    preconditions: [UI-01]
+    merge: auto
+
+  - id: FEAT-01
+    lane: frontend
+    branch: feat/download-zip
+    preconditions: [UI-01]
+    merge: auto
+
+  - id: FEAT-02
+    lane: frontend
+    branch: feat/error-handling
+    preconditions: [UI-01]
+    merge: auto

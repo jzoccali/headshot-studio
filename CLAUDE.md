@@ -1,1 +1,1 @@
-@AGENTS.md
+@build-loop/PREAMBLE.md

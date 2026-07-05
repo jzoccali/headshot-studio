@@ -1,0 +1,63 @@
+name: CI
+
+# Runs on every PR. This is the gate auto-merge waits on.
+# headshot-studio is a Next.js app with no database — CI checks
+# lint, TypeScript, and that the build compiles clean.
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build-check:
+    name: build-check
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build (catches TypeScript errors + broken imports)
+        run: npm run build
+        env:
+          # Dummy env vars so Next.js build doesn't fail on missing env
+          BLOB_READ_WRITE_TOKEN: dummy
+          OPENAI_API_KEY: dummy
+          XAI_API_KEY: dummy
+
+  notify-failure:
+    name: notify-failure
+    needs: build-check
+    if: ${{ failure() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Email Joey — CI failed
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          secure: true
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          from: Build Factory <${{ secrets.MAIL_USERNAME }}>
+          to: ${{ vars.NOTIFY_EMAIL }}
+          subject: "[Headshot Studio] CI FAILED on ${{ github.head_ref }}"
+          body: |
+            CI did not pass — the PR will NOT auto-merge until this is green.
+
+            Branch: ${{ github.head_ref }}
+            Run:    ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

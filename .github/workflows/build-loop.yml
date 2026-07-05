@@ -1,0 +1,126 @@
+name: Build loop
+
+# Picks the next eligible task, runs Claude Code on a fresh branch,
+# opens ONE pull request, then stops. Re-fires automatically when a PR
+# merges to main (chains the next task) and hourly as a safety net.
+
+on:
+  workflow_dispatch:
+    inputs:
+      task_id:
+        description: "Force a specific task id (optional; leave blank to auto-select)"
+        required: false
+        default: ""
+  pull_request:
+    types: [closed]
+    branches: [main]
+  schedule:
+    - cron: "0 * * * *"   # hourly catch-up
+
+# Only one loop run at a time
+concurrency:
+  group: build-loop
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  dispatch:
+    # KILL-SWITCH: set repo variable LOOP_ENABLED=false to pause instantly.
+    # On PR events, only proceed when the PR actually merged.
+    if: >-
+      ${{ vars.LOOP_ENABLED != 'false'
+          && (github.event_name != 'pull_request' || github.event.pull_request.merged == true) }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Select next task
+        id: select
+        env:
+          FORCE_TASK_ID: ${{ github.event.inputs.task_id }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          chmod +x build-loop/scripts/*.sh
+          ./build-loop/scripts/select-next-task.sh
+
+      - name: Nothing to do
+        if: ${{ steps.select.outputs.task_id == '' }}
+        run: echo "No eligible task. Exiting cleanly."
+
+      - name: Compose prompt
+        if: ${{ steps.select.outputs.task_id != '' }}
+        id: compose
+        env:
+          TASK_ID: ${{ steps.select.outputs.task_id }}
+        run: ./build-loop/scripts/extract-prompt.sh "$TASK_ID" > /tmp/prompt.txt
+
+      - name: Create the task branch
+        if: ${{ steps.select.outputs.task_id != '' }}
+        env:
+          BRANCH: ${{ steps.select.outputs.branch }}
+        run: |
+          git checkout -b "$BRANCH"
+          git push -u origin "$BRANCH"
+
+      - name: Run Claude Code (the builder)
+        if: ${{ steps.select.outputs.task_id != '' }}
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt_file: /tmp/prompt.txt
+          branch: ${{ steps.select.outputs.branch }}
+          claude_args: >-
+            --max-turns 40
+            --max-budget-usd ${{ vars.MAX_BUDGET_USD || '5' }}
+            --model ${{ vars.BUILDER_MODEL || 'claude-opus-4-8' }}
+          show_full_output: true
+
+      - name: Open the pull request
+        if: ${{ steps.select.outputs.task_id != '' }}
+        id: openpr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ steps.select.outputs.branch }}
+          TASK_ID: ${{ steps.select.outputs.task_id }}
+          LANE: ${{ steps.select.outputs.lane }}
+          AUTO_MERGE: ${{ steps.select.outputs.auto_merge }}
+        run: |
+          gh pr create \
+            --base main --head "$BRANCH" \
+            --title "[$TASK_ID] automated build" \
+            --body "Automated by the build loop. Task: $TASK_ID. Lane: $LANE." \
+            --label "loop" --label "lane:$LANE" --label "id:$TASK_ID"
+          PR_URL=$(gh pr view "$BRANCH" --json url --jq .url)
+          echo "pr_url=$PR_URL" >> "$GITHUB_OUTPUT"
+          if [ "$AUTO_MERGE" = "true" ]; then
+            gh pr merge "$BRANCH" --squash --auto
+          fi
+
+      - name: Email Joey — PR needs your merge
+        if: ${{ steps.select.outputs.task_id != '' && steps.select.outputs.auto_merge == 'false' }}
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          secure: true
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          from: Build Factory <${{ secrets.MAIL_USERNAME }}>
+          to: ${{ vars.NOTIFY_EMAIL }}
+          subject: "[Headshot Studio] ${{ steps.select.outputs.task_id }} ready to merge"
+          body: |
+            A pull request is ready and waiting on your review + merge.
+
+            Task:  ${{ steps.select.outputs.task_id }}
+            Lane:  ${{ steps.select.outputs.lane }}
+            PR:    ${{ steps.openpr.outputs.pr_url }}
+
+            Review the diff, then merge when you're happy.
+            Merging automatically chains the next task.

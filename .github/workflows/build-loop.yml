@@ -1,9 +1,5 @@
 name: Build loop
 
-# Picks the next eligible task, runs Claude Code on a fresh branch,
-# opens ONE pull request, then stops. Re-fires automatically when a PR
-# merges to main (chains the next task) and hourly as a safety net.
-
 on:
   workflow_dispatch:
     inputs:
@@ -15,9 +11,8 @@ on:
     types: [closed]
     branches: [main]
   schedule:
-    - cron: "0 * * * *"   # hourly catch-up
+    - cron: "0 * * * *"
 
-# Only one loop run at a time
 concurrency:
   group: build-loop
   cancel-in-progress: false
@@ -25,11 +20,10 @@ concurrency:
 permissions:
   contents: write
   pull-requests: write
+  id-token: write   # required by claude-code-action
 
 jobs:
   dispatch:
-    # KILL-SWITCH: set repo variable LOOP_ENABLED=false to pause instantly.
-    # On PR events, only proceed when the PR actually merged.
     if: >-
       ${{ vars.LOOP_ENABLED != 'false'
           && (github.event_name != 'pull_request' || github.event.pull_request.merged == true) }}
@@ -54,14 +48,20 @@ jobs:
         if: ${{ steps.select.outputs.task_id == '' }}
         run: echo "No eligible task. Exiting cleanly."
 
-      - name: Compose prompt
+      - name: Read prompt into output
         if: ${{ steps.select.outputs.task_id != '' }}
         id: compose
         env:
           TASK_ID: ${{ steps.select.outputs.task_id }}
-        run: ./build-loop/scripts/extract-prompt.sh "$TASK_ID" > /tmp/prompt.txt
+        run: |
+          ./build-loop/scripts/extract-prompt.sh "$TASK_ID" > /tmp/prompt.txt
+          {
+            echo 'content<<EOF'
+            cat /tmp/prompt.txt
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
 
-      - name: Create the task branch
+      - name: Create and switch to task branch
         if: ${{ steps.select.outputs.task_id != '' }}
         env:
           BRANCH: ${{ steps.select.outputs.branch }}
@@ -74,8 +74,7 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          prompt_file: /tmp/prompt.txt
-          branch: ${{ steps.select.outputs.branch }}
+          prompt: ${{ steps.compose.outputs.content }}
           claude_args: >-
             --max-turns 40
             --max-budget-usd ${{ vars.MAX_BUDGET_USD || '5' }}
@@ -119,8 +118,7 @@ jobs:
             A pull request is ready and waiting on your review + merge.
 
             Task:  ${{ steps.select.outputs.task_id }}
-            Lane:  ${{ steps.select.outputs.lane }}
             PR:    ${{ steps.openpr.outputs.pr_url }}
 
-            Review the diff, then merge when you're happy.
+            Review the diff, merge when you're happy.
             Merging automatically chains the next task.

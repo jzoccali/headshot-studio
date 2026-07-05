@@ -1,8 +1,5 @@
 name: Fix-pass
 
-# Dispatches Claude Code back onto an existing PR branch to fix issues.
-# Reads the fix prompt from main, then switches to the PR branch to edit code.
-
 on:
   workflow_dispatch:
     inputs:
@@ -20,6 +17,7 @@ concurrency:
 permissions:
   contents: write
   pull-requests: write
+  id-token: write
 
 jobs:
   fix:
@@ -38,6 +36,11 @@ jobs:
         run: |
           chmod +x build-loop/scripts/*.sh
           ./build-loop/scripts/extract-prompt.sh "$TASK_ID" --task-only > /tmp/fix-prompt.txt
+          {
+            echo 'content<<EOF'
+            cat /tmp/fix-prompt.txt
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
 
       - name: Switch to the PR branch
         env:
@@ -50,7 +53,6 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          prompt_file: /tmp/fix-prompt.txt
-          branch: ${{ github.event.inputs.pr_branch }}
+          prompt: ${{ steps.compose.outputs.content }}
           claude_args: "--max-turns 25 --model claude-opus-4-8"
           show_full_output: true

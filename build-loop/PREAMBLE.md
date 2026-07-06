@@ -23,3 +23,13 @@ You are a headless Claude Code builder working on **headshot-studio**, a Next.js
 - `npm run lint` is clean
 - `npm run build` compiles without errors
 - PR description explains what changed and how you verified it
+
+## REQUIRED — how to finish your task
+When your code changes are complete, you MUST commit them:
+```
+git add -A
+git commit -m "feat[TASK-ID]: short description of what changed"
+git push
+```
+Do this before stopping. If you do not commit and push, your work is lost and the PR cannot be opened. This is mandatory.
+

@@ -81,6 +81,21 @@ jobs:
             --model ${{ vars.BUILDER_MODEL || 'claude-opus-4-8' }}
           show_full_output: true
 
+      - name: Commit any uncommitted changes (safety net)
+        if: ${{ steps.select.outputs.task_id != '' }}
+        env:
+          TASK_ID: ${{ steps.select.outputs.task_id }}
+        run: |
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          if ! git diff --quiet || ! git diff --staged --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]; then
+            git add -A
+            git commit -m "build[$TASK_ID]: automated changes"
+            git push
+          else
+            echo "No uncommitted changes — Claude Code already committed."
+          fi
+
       - name: Open the pull request
         if: ${{ steps.select.outputs.task_id != '' }}
         id: openpr

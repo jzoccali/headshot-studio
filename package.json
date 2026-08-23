@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "node --experimental-strip-types --test lib/generation.test.ts",
+    "ab:image2": "node --experimental-strip-types scripts/ab-image2.ts"
   },
   "dependencies": {
     "@vercel/blob": "^0.27.1",

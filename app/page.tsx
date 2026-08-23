@@ -24,46 +24,62 @@ type Category = {
   looks: Look[];
 };
 
-// 16 unique looks — every photo has its own outfit AND its own setting.
+// 24 unique looks — every photo has its own outfit AND its own setting.
 // Look ids map to the LOOKS table in /api/generate.
 const CATEGORIES: Category[] = [
   {
-    id: 'boardroom', name: 'Boardroom', description: 'Four distinct executive looks — from full suit & tie to rolled sleeves at the startup HQ.',
+    id: 'boardroom', name: 'Boardroom', description: 'Executive looks — suit and tie through courtyard blazer.',
     looks: [
       { id: 'navy-suit-tie', label: 'Navy Suit & Tie', description: 'Classic power — glass conference room' },
       { id: 'skyline-no-tie', label: 'Charcoal, Skyline', description: 'Open collar — corner-office city view' },
       { id: 'black-editorial', label: 'Black on Black', description: 'Turtleneck + blazer — dark studio drama' },
       { id: 'startup-office', label: 'Rolled Sleeves', description: 'White shirt, no jacket — bright startup HQ' },
+      { id: 'tan-blazer-courtyard', label: 'Camel Blazer', description: 'Unstructured blazer — sunlit brick courtyard' },
     ],
   },
   {
-    id: 'smart-casual', name: 'Smart Casual', description: 'Approachable but sharp — coffee shop, library, rooftop, creative loft.',
+    id: 'smart-casual', name: 'Smart Casual', description: 'Approachable but sharp — café, library, bookstore, loft.',
     looks: [
       { id: 'coffee-shop', label: 'Coffee Shop', description: 'Shawl cardigan — warm café bokeh' },
       { id: 'library-knit', label: 'Library', description: 'Knit polo — book-lined study' },
       { id: 'rooftop-golden', label: 'Rooftop Golden Hour', description: 'Suede overshirt — sunset terrace' },
       { id: 'creative-loft', label: 'Creative Loft', description: 'All-black casual — white-brick studio' },
+      { id: 'rust-cord-bookstore', label: 'Bookstore', description: 'Rust corduroy — independent bookshop' },
     ],
   },
   {
-    id: 'weekend', name: 'Weekend', description: 'The life shots — sailing, beach, trail, café patio.',
+    id: 'weekend', name: 'Weekend', description: 'Life shots — water, trail, cabin, patio.',
     looks: [
       { id: 'sailing', label: 'Sailing', description: 'Quarter-zip on deck — sun-sparkled water' },
       { id: 'beach-linen', label: 'Beach Linen', description: 'White linen — golden-hour surf' },
       { id: 'field-jacket', label: 'On the Trail', description: 'Field jacket — dappled forest light' },
       { id: 'cafe-patio', label: 'Café Patio', description: 'Merino polo — sunlit European street' },
+      { id: 'knit-cabin', label: 'Cabin Knit', description: 'Merino pullover — timber cabin firelight' },
     ],
   },
   {
-    id: 'editorial', name: 'Bold & Editorial', description: 'Magazine energy — leather, blue hour, denim, crimson backdrop.',
+    id: 'editorial', name: 'Bold & Editorial', description: 'Magazine energy — leather, gallery, denim, crimson.',
     looks: [
       { id: 'leather-moody', label: 'Leather, Moody', description: 'Black leather — sculpted studio shadows' },
       { id: 'evening-city', label: 'Evening City', description: 'Wool topcoat — blue-hour street lights' },
       { id: 'industrial-denim', label: 'Industrial Denim', description: 'Indigo shirt — brick & steel loft' },
       { id: 'crimson-editorial', label: 'Crimson Editorial', description: 'Navy tailoring — deep red backdrop' },
+      { id: 'cream-turtleneck-gallery', label: 'Gallery Ivory', description: 'Ivory turtleneck — white-box gallery' },
+    ],
+  },
+  {
+    id: 'florida', name: 'Florida / Local', description: 'Porch, clubhouse, bay, workshop — clothes and light that belong here.',
+    looks: [
+      { id: 'seersucker-porch', label: 'Seersucker Porch', description: 'Pale seersucker — screened Florida porch' },
+      { id: 'golf-clubhouse', label: 'Clubhouse Polo', description: 'Sage polo — golf clubhouse veranda' },
+      { id: 'waterfront-sportcoat', label: 'Bay Sport Coat', description: 'Navy cotton coat — Tampa Bay waterfront' },
+      { id: 'chambray-workshop', label: 'Workshop Chambray', description: 'Rolled chambray — wood shop daylight' },
     ],
   },
 ];
+
+const PACK_LOOK_COUNT = CATEGORIES.reduce((n, cat) => n + cat.looks.length, 0);
+const SESSION_LIMIT = 32;
 
 type GeneratedResult = {
   imageUrl: string;
@@ -88,6 +104,7 @@ export default function HeadshotStudio() {
   const [hydrated, setHydrated] = useState(false);
   // GPT won the A/B (sharper, more realistic) — it's the default; Grok stays as fallback.
   const [engine, setEngine] = useState<'xai' | 'openai'>('openai');
+  const [openaiVariant, setOpenaiVariant] = useState<'legacy' | 'image2'>('legacy');
 
   // Restore the session from localStorage so navigating away (e.g. opening an image)
   // or reloading doesn't wipe the gallery — losing 15 images forced costly regenerations.
@@ -269,8 +286,8 @@ export default function HeadshotStudio() {
       toast.error("Please check the consent box to proceed (biometric data processing)");
       return;
     }
-    if (generatedResults.length >= 24) {
-      toast.error("Session limit reached (24 images). Start a new session or download what you have.");
+    if (generatedResults.length >= SESSION_LIMIT) {
+      toast.error(`Session limit reached (${SESSION_LIMIT} images). Start a new session or download what you have.`);
       return;
     }
 
@@ -294,6 +311,7 @@ export default function HeadshotStudio() {
           backgroundId: bg.id,
           label: `${cat.name} - ${bg.label}${engine === 'openai' ? ' (GPT)' : ''}`,
           engine,
+          openaiVariant,
         }),
       });
 
@@ -315,7 +333,7 @@ export default function HeadshotStudio() {
     }
   };
 
-  // Bulk generation for all 4 categories × 4 backgrounds = 16 variations
+  // Bulk generation for the full 24-look pack.
   const generateAllVariations = async () => {
     if (!subjectReady || referenceUrls.length === 0) {
       toast.error("Upload photos and build the subject first");
@@ -349,9 +367,9 @@ export default function HeadshotStudio() {
         if (!existing.has(label)) queue.push({ cat, bg, label });
       }
     }
-    const remainingSlots = Math.max(0, 24 - generatedResults.length);
+    const remainingSlots = Math.max(0, SESSION_LIMIT - generatedResults.length);
     if (queue.length > remainingSlots) {
-      toast.error(`Session limit is 24 images — generating the first ${remainingSlots}.`);
+      toast.error(`Session limit is ${SESSION_LIMIT} images — generating the first ${remainingSlots}.`);
       queue.length = remainingSlots;
     }
 
@@ -374,6 +392,7 @@ export default function HeadshotStudio() {
               backgroundId: bg.id,
               label,
               engine,
+              openaiVariant,
             }),
           });
 
@@ -458,6 +477,7 @@ export default function HeadshotStudio() {
                 backgroundId: bg.id,
                 label,
                 engine,
+                openaiVariant,
               }),
             });
             const data = await res.json();
@@ -523,7 +543,7 @@ export default function HeadshotStudio() {
         const label = `${cat.name} - ${bg.label}${engine === 'openai' ? ' (GPT)' : ''}`;
 
         if (generatedResults.some(r => r.label === label)) continue;
-        if (generatedResults.length >= 24) break;
+        if (generatedResults.length >= SESSION_LIMIT) break;
 
         let success = false;
         for (let attempt = 0; attempt < 2 && !success; attempt++) {
@@ -537,6 +557,7 @@ export default function HeadshotStudio() {
                 backgroundId: bg.id,
                 label,
                 engine,
+                openaiVariant,
               }),
             });
 
@@ -663,9 +684,9 @@ export default function HeadshotStudio() {
                   Clear all sources & re-upload
                 </button>
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 mb-4">
+              <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2 mb-4">
                 {sources.map(s => (
-                  <div key={s.id} className="relative rounded-2xl overflow-hidden border border-zinc-800 bg-zinc-900">
+                  <div key={s.id} className="relative rounded-xl overflow-hidden border border-zinc-800 bg-zinc-900">
                     <img src={s.previewUrl} className="w-full aspect-square object-cover" alt={s.name} />
                     <div className="p-2 text-[10px] truncate bg-black/60">{s.name}</div>
                     <button onClick={() => removeSource(s.id)} className="absolute top-2 right-2 bg-black/70 p-1 rounded-full"><X className="w-3 h-3" /></button>
@@ -738,12 +759,28 @@ export default function HeadshotStudio() {
                   GPT
                 </button>
               </div>
+              {engine === 'openai' && (
+                <div className="flex items-center rounded-2xl border border-zinc-700 p-0.5 text-xs" title="GPT Image 1.5 square vs GPT Image 2 portrait">
+                  <button
+                    onClick={() => setOpenaiVariant('legacy')}
+                    className={`px-3 py-1.5 rounded-xl font-medium ${openaiVariant === 'legacy' ? 'bg-zinc-200 text-black' : 'text-zinc-400 hover:text-zinc-200'}`}
+                  >
+                    1.5 sq
+                  </button>
+                  <button
+                    onClick={() => setOpenaiVariant('image2')}
+                    className={`px-3 py-1.5 rounded-xl font-medium ${openaiVariant === 'image2' ? 'bg-zinc-200 text-black' : 'text-zinc-400 hover:text-zinc-200'}`}
+                  >
+                    2 portrait
+                  </button>
+                </div>
+              )}
               <button
                 onClick={generateAllVariations}
                 disabled={isGenerating || !subjectReady || !consent}
                 className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-zinc-700 rounded-2xl text-sm font-medium whitespace-nowrap"
               >
-                Generate All 16 Variations
+                Generate All {PACK_LOOK_COUNT} Variations
               </button>
             </div>
             {failedVariations.length > 0 && !isGenerating && (
@@ -774,7 +811,7 @@ export default function HeadshotStudio() {
                     disabled={isGenerating || !subjectReady || !consent}
                     className="text-[10px] px-2 py-0.5 bg-zinc-800 hover:bg-zinc-700 rounded text-zinc-400"
                   >
-                    All 4 backgrounds
+                    All {cat.looks.length} looks
                   </button>
                 </div>
                 <div className="text-xs text-zinc-400 mb-3">{cat.description}</div>
@@ -841,12 +878,12 @@ export default function HeadshotStudio() {
               </div>
             )}
 
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2">
               {generatedResults.map((r, idx) => (
-                <div key={idx} className="border border-zinc-800 rounded-2xl overflow-hidden bg-zinc-900">
-                  <img src={r.imageUrl} className="w-full aspect-square object-cover" alt={r.label} />
-                  <div className="p-3 text-sm">
-                    <div className="font-medium">{r.label}</div>
+                <div key={idx} className="border border-zinc-800 rounded-xl overflow-hidden bg-zinc-900">
+                  <img src={r.imageUrl} className="w-full aspect-[2/3] object-cover object-top" alt={r.label} />
+                  <div className="p-2 text-xs">
+                    <div className="font-medium truncate" title={r.label}>{r.label}</div>
                     <div className="text-[10px] text-amber-400 mb-1">AI-generated headshot</div>
                     <button
                       onClick={async () => {
